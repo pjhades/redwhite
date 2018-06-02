@@ -1,18 +1,20 @@
 use std::ops::{Deref, DerefMut};
 
-type Address = u16;
+pub type Address = u16;
 
-trait MemoryAccess {
+pub trait Access {
     fn read(&self, at: Address) -> u8;
     fn write(&mut self, at: Address, val: u8);
 
     fn read_word(&self, at: Address) -> u16 {
-        self.read(at) as u16 | (self.read(at + 1) as u16) << 8
+        self.read(at) as u16 |
+        (self.read(at + 1) as u16) << 8
     }
 
     fn read_word_wrap(&self, at: Address) -> u16 {
         let wrap = at & 0xff00 | (at + 1) & 0x00ff;
-        self.read(at) as u16 | (self.read(wrap) as u16) << 8
+        self.read(at) as u16 |
+        (self.read(wrap) as u16) << 8
     }
 }
 
@@ -35,7 +37,7 @@ impl DerefMut for Ram {
     }
 }
 
-impl MemoryAccess for Ram {
+impl Access for Ram {
     fn read(&self, at: Address) -> u8 {
         self[at as usize & 0x07ff]
     }
@@ -58,7 +60,7 @@ impl Memory {
     }
 }
 
-impl MemoryAccess for Memory {
+impl Access for Memory {
     fn read(&self, at: Address) -> u8 {
         if at < 0x2000 {
             self.ram.read(at)
