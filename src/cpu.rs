@@ -34,7 +34,9 @@ fn does_x_page(a1: Address, a2: Address) -> bool {
 // addressing modes
 trait AddressingMode {
     fn read(&mut self, cpu: &mut Cpu, mem: &Memory) -> u8;
-    fn write(&mut self, cpu: &mut Cpu, mem: &mut Memory, val: u8);
+    fn write(&mut self, _cpu: &mut Cpu, _mem: &mut Memory, _val: u8) {
+        panic!("write back in an instruction with immediate addressing");
+    }
 }
 
 // accumulator addressing
@@ -56,10 +58,6 @@ struct Immediate;
 impl AddressingMode for Immediate {
     fn read(&mut self, cpu: &mut Cpu, mem: &Memory) -> u8 {
         cpu.fetch(mem)
-    }
-
-    fn write(&mut self, _cpu: &mut Cpu, _mem: &mut Memory, _val: u8) {
-        panic!("write back in an instruction with immediate addressing");
     }
 }
 
@@ -191,31 +189,51 @@ impl Cpu {
         }
     }
 
-    pub fn set_flag(&mut self, flag: Flags) {
+    #[inline]
+    fn set_flag(&mut self, flag: Flags) {
         self.p.insert(flag);
     }
 
-    pub fn clear_flag(&mut self, flag: Flags) {
+    #[inline]
+    fn clear_flag(&mut self, flag: Flags) {
         self.p.remove(flag);
     }
 
-    pub fn is_flag_set(&self, flag: Flags) {
+    #[inline]
+    fn is_flag_set(&self, flag: Flags) {
         self.p.contains(flag);
     }
 
-    pub fn flags_as_byte(&self) -> u8 {
+    #[inline]
+    fn flags_as_byte(&self) -> u8 {
         self.p.bits()
     }
 
-    pub fn fetch(&mut self, mem: &Memory) -> u8 {
+    #[inline]
+    fn fetch(&mut self, mem: &Memory) -> u8 {
         let val = mem.read(self.pc);
         self.pc += 1;
         val
     }
 
-    pub fn fetch_word(&mut self, mem: &Memory) -> u16 {
+    #[inline]
+    fn fetch_word(&mut self, mem: &Memory) -> u16 {
         let val = mem.read_word(self.pc);
         self.pc += 2;
         val
+    }
+
+    #[inline]
+    fn set_n(&mut self, val: u8) {
+        if val & 0x80 != 0 {
+            self.set_flag(Flags::N);
+        }
+    }
+
+    #[inline]
+    fn set_z(&mut self, val: u8) {
+        if val == 0 {
+            self.set_flag(Flags::Z);
+        }
     }
 }
