@@ -14,7 +14,7 @@ pub struct Cpu {
     x: u8,
     y: u8,
     sp: u8,
-    pc: u16,
+    pc: Address,
     p: u8,
 
     cycle_count: usize,
@@ -194,6 +194,21 @@ impl<'a> AddressingMode for IndirectIndexed<'a> {
     }
 }
 
+// relative addressing
+struct Relative<'a> {
+    at: Address,
+    cpu: &'a mut Cpu,
+    mem: &'a Memory,
+}
+
+impl<'a> AddressingMode for Relative<'a> {
+    fn read(&mut self) -> u8 {
+        let offset = self.cpu.fetch(self.mem) as i8 as i16;
+        self.at = (self.cpu.pc as i16).wrapping_add(offset) as Address;
+        0
+    }
+}
+
 impl Cpu {
     pub fn new() -> Self {
         Cpu {
@@ -245,7 +260,7 @@ impl Cpu {
         value
     }
 
-    fn adc(&mut self, mode: &mut AddressingMode) {
+    fn adc(&mut self, mode: &mut AddressingMode) -> u8 {
         let operand = mode.read();
         let mut result = operand as u16 + self.a as u16;
         if self.is_flag_set(FLAG_C) {
@@ -261,5 +276,38 @@ impl Cpu {
         self.set_flag(FLAG_V, (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0);
 
         self.a = result;
+        result
+    }
+
+    fn and(&mut self, mode: &mut AddressingMode) -> u8 {
+        let operand = mode.read();
+        let result = operand & self.a;
+        self.set_zn(result);
+        self.a = result;
+        result
+    }
+
+    fn asl(&mut self, mode: &mut AddressingMode) -> u8 {
+        let operand = mode.read();
+        self.set_flag(FLAG_C, operand & 0x80 != 0);
+        let result = operand << 1;
+        self.set_zn(result);
+        result
+    }
+
+    fn jump_on_condition(&mut self, at: Address, condition: bool) {
+        if condition {
+            self.cycle_count += 1;
+            if does_x_page(self.pc, at) {
+                self.cycle_count += 1;
+            }
+            self.pc = at;
+        }
+    }
+
+    fn bcc(&mut self, mut mode: Relative) {
+        mode.read();
+        let condition = !self.is_flag_set(FLAG_C);
+        self.jump_on_condition(mode.at, condition);
     }
 }
