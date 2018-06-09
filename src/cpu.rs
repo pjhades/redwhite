@@ -226,6 +226,12 @@ impl Cpu {
     }
 
     #[inline(always)]
+    fn set_zn(&mut self, value: u8) {
+        self.set_flag(FLAG_Z, value == 0);
+        self.set_flag(FLAG_N, value & 0x80 != 0);
+    }
+
+    #[inline(always)]
     fn fetch(&mut self, mem: &Memory) -> u8 {
         let value = mem.read(self.pc);
         self.pc += 1;
@@ -237,5 +243,23 @@ impl Cpu {
         let value = mem.read_word(self.pc);
         self.pc += 2;
         value
+    }
+
+    fn adc(&mut self, mode: &mut AddressingMode) {
+        let operand = mode.read();
+        let mut result = operand as u16 + self.a as u16;
+        if self.is_flag_set(FLAG_C) {
+            result += 1;
+        }
+
+        self.set_flag(FLAG_C, result > 0xff);
+
+        let result = result as u8;
+        self.set_zn(result);
+
+        let a = self.a;
+        self.set_flag(FLAG_V, (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0);
+
+        self.a = result;
     }
 }
