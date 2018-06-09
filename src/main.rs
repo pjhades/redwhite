@@ -1,6 +1,6 @@
 extern crate redwhite;
 
-use redwhite::cpu::{Cpu, Flags};
+use redwhite::cpu::{Cpu};
 
 fn main() {
 }

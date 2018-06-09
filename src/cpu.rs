@@ -1,18 +1,13 @@
 use mem::{Address, Memory, Access};
 
-bitflags! {
-    #[derive(Default)]
-    pub struct Flags: u8 {
-        const N = 0b1000_0000;
-        const V = 0b0100_0000;
-        const X = 0b0010_0000;
-        const B = 0b0001_0000;
-        const D = 0b0000_1000;
-        const I = 0b0000_0100;
-        const Z = 0b0000_0010;
-        const C = 0b0000_0001;
-    }
-}
+const FLAG_N: u8 = 0b1000_0000;
+const FLAG_V: u8 = 0b0100_0000;
+const FLAG_X: u8 = 0b0010_0000;
+const FLAG_B: u8 = 0b0001_0000;
+const FLAG_D: u8 = 0b0000_1000;
+const FLAG_I: u8 = 0b0000_0100;
+const FLAG_Z: u8 = 0b0000_0010;
+const FLAG_C: u8 = 0b0000_0001;
 
 pub struct Cpu {
     a: u8,
@@ -20,7 +15,7 @@ pub struct Cpu {
     y: u8,
     sp: u8,
     pc: u16,
-    p: Flags,
+    p: u8,
 
     cycle_count: usize,
 }
@@ -183,30 +178,27 @@ impl Cpu {
             y: 0,
             sp: 0,
             pc: 0,
-            p: Flags::default(),
+            p: 0,
 
             cycle_count: 0,
         }
     }
 
     #[inline]
-    fn set_flag(&mut self, flag: Flags) {
-        self.p.insert(flag);
+    fn set_flag(&mut self, flag: u8, condition: bool) {
+        if condition {
+            self.p |= flag; 
+        }
     }
 
     #[inline]
-    fn clear_flag(&mut self, flag: Flags) {
-        self.p.remove(flag);
+    fn clear_flag(&mut self, flag: u8) {
+        self.p &= !flag;
     }
 
     #[inline]
-    fn is_flag_set(&self, flag: Flags) {
-        self.p.contains(flag);
-    }
-
-    #[inline]
-    fn flags_as_byte(&self) -> u8 {
-        self.p.bits()
+    fn is_flag_set(&self, flag: u8) -> bool {
+        self.p & flag != 0
     }
 
     #[inline]
@@ -221,19 +213,5 @@ impl Cpu {
         let val = mem.read_word(self.pc);
         self.pc += 2;
         val
-    }
-
-    #[inline]
-    fn set_n(&mut self, val: u8) {
-        if val & 0x80 != 0 {
-            self.set_flag(Flags::N);
-        }
-    }
-
-    #[inline]
-    fn set_z(&mut self, val: u8) {
-        if val == 0 {
-            self.set_flag(Flags::Z);
-        }
     }
 }
