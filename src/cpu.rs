@@ -21,7 +21,7 @@ pub struct Cpu {
 }
 
 // check if addresses `a1` and `a2` are on different pages
-#[inline]
+#[inline(always)]
 fn does_x_page(a1: Address, a2: Address) -> bool {
     (a1 >> 8) == (a2 >> 8)
 }
@@ -184,31 +184,31 @@ impl Cpu {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn set_flag(&mut self, flag: u8, condition: bool) {
         if condition {
             self.p |= flag; 
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn clear_flag(&mut self, flag: u8) {
         self.p &= !flag;
     }
 
-    #[inline]
+    #[inline(always)]
     fn is_flag_set(&self, flag: u8) -> bool {
         self.p & flag != 0
     }
 
-    #[inline]
+    #[inline(always)]
     fn fetch(&mut self, mem: &Memory) -> u8 {
         let val = mem.read(self.pc);
         self.pc += 1;
         val
     }
 
-    #[inline]
+    #[inline(always)]
     fn fetch_word(&mut self, mem: &Memory) -> u16 {
         let val = mem.read_word(self.pc);
         self.pc += 2;
