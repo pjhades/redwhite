@@ -260,7 +260,17 @@ impl Cpu {
         value
     }
 
-    fn adc(&mut self, mode: &mut AddressingMode) -> u8 {
+    fn jump_on_condition(&mut self, at: Address, condition: bool) {
+        if condition {
+            self.cycle_count += 1;
+            if does_x_page(self.pc, at) {
+                self.cycle_count += 1;
+            }
+            self.pc = at;
+        }
+    }
+
+    fn adc<M: AddressingMode>(&mut self, mut mode: M) -> u8 {
         let operand = mode.read();
         let mut result = operand as u16 + self.a as u16;
         if self.is_flag_set(FLAG_C) {
@@ -279,7 +289,7 @@ impl Cpu {
         result
     }
 
-    fn and(&mut self, mode: &mut AddressingMode) -> u8 {
+    fn and<M: AddressingMode>(&mut self, mut mode: M) -> u8 {
         let operand = mode.read();
         let result = operand & self.a;
         self.set_zn(result);
@@ -287,22 +297,12 @@ impl Cpu {
         result
     }
 
-    fn asl(&mut self, mode: &mut AddressingMode) -> u8 {
+    fn asl<M: AddressingMode>(&mut self, mut mode: M) -> u8 {
         let operand = mode.read();
         self.set_flag(FLAG_C, operand & 0x80 != 0);
         let result = operand << 1;
         self.set_zn(result);
         result
-    }
-
-    fn jump_on_condition(&mut self, at: Address, condition: bool) {
-        if condition {
-            self.cycle_count += 1;
-            if does_x_page(self.pc, at) {
-                self.cycle_count += 1;
-            }
-            self.pc = at;
-        }
     }
 
     fn bcc(&mut self, mut mode: Relative) {
