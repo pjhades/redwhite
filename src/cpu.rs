@@ -16,8 +16,18 @@ pub struct Cpu {
     sp: u8,
     pc: Address,
     p: u8,
-
     cycle_count: usize,
+    mem: Memory,
+}
+
+impl Access for Cpu {
+    fn read(&self, at: Address) -> u8 {
+        self.mem.read(at)
+    }
+
+    fn write(&mut self, at: Address, value: u8) {
+        self.mem.write(at, value)
+    }
 }
 
 // check if addresses `a1` and `a2` are on different pages
@@ -51,31 +61,29 @@ impl<'a> AddressingMode for Accumulator<'a> {
 
 // immediate addressing
 struct Immediate<'a> {
-    mem: &'a Memory,
     cpu: &'a mut Cpu,
 }
 
 impl<'a> AddressingMode for Immediate<'a> {
     fn read(&mut self) -> u8 {
-        self.cpu.fetch(self.mem)
+        self.cpu.fetch()
     }
 }
 
 // zero page addressing
 struct ZeroPage<'a> {
     at: Address,
-    mem: &'a mut Memory,
     cpu: &'a mut Cpu,
 }
 
 impl<'a> AddressingMode for ZeroPage<'a> {
     fn read(&mut self) -> u8 {
-        self.at = self.cpu.fetch(self.mem) as Address;
-        self.mem.read(self.at)
+        self.at = self.cpu.fetch() as Address;
+        self.cpu.read(self.at)
     }
 
     fn write(&mut self, value: u8) {
-        self.mem.write(self.at, value);
+        self.cpu.write(self.at, value);
     }
 }
 
@@ -83,36 +91,34 @@ impl<'a> AddressingMode for ZeroPage<'a> {
 struct ZeroPageIndexed<'a> {
     at: Address,
     index: u8,
-    mem: &'a mut Memory,
     cpu: &'a mut Cpu,
 }
 
 impl<'a> AddressingMode for ZeroPageIndexed<'a> {
     fn read(&mut self) -> u8 {
-        self.at = (self.cpu.fetch(self.mem) as Address + self.index as Address) & 0x00ff;
-        self.mem.read(self.at)
+        self.at = (self.cpu.fetch() as Address + self.index as Address) & 0x00ff;
+        self.cpu.read(self.at)
     }
 
     fn write(&mut self, value: u8) {
-        self.mem.write(self.at, value);
+        self.cpu.write(self.at, value);
     }
 }
 
 // absolute addressing
 struct Absolute<'a> {
     at: Address,
-    mem: &'a mut Memory,
     cpu: &'a mut Cpu,
 }
 
 impl<'a> AddressingMode for Absolute<'a> {
     fn read(&mut self) -> u8 {
-        self.at = self.cpu.fetch_word(self.mem);
-        self.mem.read(self.at)
+        self.at = self.cpu.fetch_word();
+        self.cpu.read(self.at)
     }
 
     fn write(&mut self, value: u8) {
-        self.mem.write(self.at, value);
+        self.cpu.write(self.at, value);
     }
 }
 
@@ -121,76 +127,73 @@ struct AbsoluteIndexed<'a> {
     at: Address,
     index: u8,
     check_xpage: bool,
-    mem: &'a mut Memory,
     cpu: &'a mut Cpu,
 }
 
 impl<'a> AddressingMode for AbsoluteIndexed<'a> {
     fn read(&mut self) -> u8 {
-        let base = self.cpu.fetch_word(self.mem);
+        let base = self.cpu.fetch_word();
         self.at = base.wrapping_add(self.index as Address);
 
         if self.check_xpage && does_x_page(base, self.at) {
             self.cpu.cycle_count += 1;
         }
 
-        self.mem.read(self.at)
+        self.cpu.read(self.at)
     }
 
     fn write(&mut self, value: u8) {
-        self.mem.write(self.at, value);
+        self.cpu.write(self.at, value);
     }
 }
 
 // indexed indirect addressing
 struct IndexedIndirect<'a> {
     at: Address,
-    mem: &'a mut Memory,
     cpu: &'a mut Cpu,
 }
 
 impl<'a> AddressingMode for IndexedIndirect<'a> {
     fn read(&mut self) -> u8 {
-        let base = self.cpu.fetch(self.mem);
+        let base = self.cpu.fetch();
 
         let lo = base.wrapping_add(self.cpu.x) as Address;
         let hi = (lo + 1) & 0x00ff;
 
-        self.at = self.mem.read(lo) as Address |
-                  (self.mem.read(hi) as Address) << 8;
-        self.mem.read(self.at)
+        self.at = self.cpu.read(lo) as Address |
+                  (self.cpu.read(hi) as Address) << 8;
+        self.cpu.read(self.at)
     }
 
     fn write(&mut self, value: u8) {
-        self.mem.write(self.at, value);
+        self.cpu.write(self.at, value);
     }
 }
 
 // indirect indexed addressing
 struct IndirectIndexed<'a> {
     at: Address,
-    mem: &'a mut Memory,
     cpu: &'a mut Cpu,
 }
 
 impl<'a> AddressingMode for IndirectIndexed<'a> {
     fn read(&mut self) -> u8 {
-        let lo = self.cpu.fetch(self.mem) as Address;
+        let lo = self.cpu.fetch() as Address;
         let hi = (lo + 1) & 0x00ff;
 
-        let base = self.mem.read(lo) as Address |
-                   (self.mem.read(hi) as Address) << 8;
+        let base = self.cpu.read(lo) as Address |
+                   (self.cpu.read(hi) as Address) << 8;
         self.at = base.wrapping_add(self.cpu.y as Address);
 
         if does_x_page(base, self.at) {
             self.cpu.cycle_count += 1;
         }
 
-        self.mem.read(self.at)
+        self.cpu.read(self.at)
     }
 
     fn write(&mut self, value: u8) {
-        self.mem.write(self.at, value);
+        self.cpu.write(self.at, value);
     }
 }
 
@@ -198,12 +201,11 @@ impl<'a> AddressingMode for IndirectIndexed<'a> {
 struct Relative<'a> {
     at: Address,
     cpu: &'a mut Cpu,
-    mem: &'a Memory,
 }
 
 impl<'a> AddressingMode for Relative<'a> {
     fn read(&mut self) -> u8 {
-        let offset = self.cpu.fetch(self.mem) as i8 as i16;
+        let offset = self.cpu.fetch() as i8 as i16;
         self.at = (self.cpu.pc as i16).wrapping_add(offset) as Address;
         0
     }
@@ -218,8 +220,8 @@ impl Cpu {
             sp: 0,
             pc: 0,
             p: 0,
-
             cycle_count: 0,
+            mem: Memory::new(),
         }
     }
 
@@ -247,15 +249,15 @@ impl Cpu {
     }
 
     #[inline(always)]
-    fn fetch(&mut self, mem: &Memory) -> u8 {
-        let value = mem.read(self.pc);
+    fn fetch(&mut self) -> u8 {
+        let value = self.read(self.pc);
         self.pc += 1;
         value
     }
 
     #[inline(always)]
-    fn fetch_word(&mut self, mem: &Memory) -> u16 {
-        let value = mem.read_word(self.pc);
+    fn fetch_word(&mut self) -> u16 {
+        let value = self.read_word(self.pc);
         self.pc += 2;
         value
     }

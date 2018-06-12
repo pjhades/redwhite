@@ -4,7 +4,7 @@ pub type Address = u16;
 
 pub trait Access {
     fn read(&self, at: Address) -> u8;
-    fn write(&mut self, at: Address, val: u8);
+    fn write(&mut self, at: Address, value: u8);
 
     fn read_word(&self, at: Address) -> u16 {
         self.read(at) as u16 |
@@ -42,8 +42,8 @@ impl Access for Ram {
         self[at as usize & 0x07ff]
     }
 
-    fn write(&mut self, at: Address, val: u8) {
-        self[at as usize & 0x07ff] = val;
+    fn write(&mut self, at: Address, value: u8) {
+        self[at as usize & 0x07ff] = value;
     }
 }
 
@@ -70,9 +70,9 @@ impl Access for Memory {
         }
     }
 
-    fn write(&mut self, at: Address, val: u8) {
+    fn write(&mut self, at: Address, value: u8) {
         if at < 0x2000 {
-            self.ram.write(at, val)
+            self.ram.write(at, value)
         }
         else {
             panic!("writing other memory sections is not implemented yet!");
