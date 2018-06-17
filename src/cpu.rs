@@ -38,176 +38,148 @@ fn does_x_page(a1: Address, a2: Address) -> bool {
 
 // addressing modes
 trait AddressingMode {
-    fn read(&mut self) -> u8;
-    fn write(&mut self, _: u8) {
-        panic!("write is not allowed in this addressing mode");
+    fn read(&mut self, cpu: &mut Cpu) -> u8;
+    fn write(&mut self, cpu: &mut Cpu, at: Address, value: u8) {
+        cpu.write(at, value);
     }
 }
-
 // accumulator addressing
-struct Accumulator<'a> {
-    cpu: &'a mut Cpu,
-}
+struct Accumulator;
 
-impl<'a> AddressingMode for Accumulator<'a> {
-    fn read(&mut self) -> u8 {
-        self.cpu.a
+impl AddressingMode for Accumulator {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        cpu.a
     }
 
-    fn write(&mut self, value: u8) {
-        self.cpu.a = value;
+    fn write(&mut self, cpu: &mut Cpu, _: Address, value: u8) {
+        cpu.a = value;
     }
 }
 
 // immediate addressing
-struct Immediate<'a> {
-    cpu: &'a mut Cpu,
-}
+struct Immediate;
 
-impl<'a> AddressingMode for Immediate<'a> {
-    fn read(&mut self) -> u8 {
-        self.cpu.fetch()
+impl AddressingMode for Immediate {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        cpu.fetch()
+    }
+
+    fn write(&mut self, _: &mut Cpu, _: Address, _: u8) {
+        panic!("write is not allowed in this addressing mode");
     }
 }
 
 // zero page addressing
-struct ZeroPage<'a> {
+struct ZeroPage {
     at: Address,
-    cpu: &'a mut Cpu,
 }
 
-impl<'a> AddressingMode for ZeroPage<'a> {
-    fn read(&mut self) -> u8 {
-        self.at = self.cpu.fetch() as Address;
-        self.cpu.read(self.at)
-    }
-
-    fn write(&mut self, value: u8) {
-        self.cpu.write(self.at, value);
+impl AddressingMode for ZeroPage {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        self.at = cpu.fetch() as Address;
+        cpu.read(self.at)
     }
 }
 
 // zero page indexed addressing
-struct ZeroPageIndexed<'a> {
+struct ZeroPageIndexed {
     at: Address,
     index: u8,
-    cpu: &'a mut Cpu,
 }
 
-impl<'a> AddressingMode for ZeroPageIndexed<'a> {
-    fn read(&mut self) -> u8 {
-        self.at = (self.cpu.fetch() as Address + self.index as Address) & 0x00ff;
-        self.cpu.read(self.at)
-    }
-
-    fn write(&mut self, value: u8) {
-        self.cpu.write(self.at, value);
+impl AddressingMode for ZeroPageIndexed {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        self.at = (cpu.fetch() as Address + self.index as Address) & 0x00ff;
+        cpu.read(self.at)
     }
 }
 
 // absolute addressing
-struct Absolute<'a> {
+struct Absolute {
     at: Address,
-    cpu: &'a mut Cpu,
 }
 
-impl<'a> AddressingMode for Absolute<'a> {
-    fn read(&mut self) -> u8 {
-        self.at = self.cpu.fetch_word();
-        self.cpu.read(self.at)
-    }
-
-    fn write(&mut self, value: u8) {
-        self.cpu.write(self.at, value);
+impl AddressingMode for Absolute {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        self.at = cpu.fetch_word();
+        cpu.read(self.at)
     }
 }
 
 // absolute indexed addressing
-struct AbsoluteIndexed<'a> {
+struct AbsoluteIndexed {
     at: Address,
     index: u8,
     check_xpage: bool,
-    cpu: &'a mut Cpu,
 }
 
-impl<'a> AddressingMode for AbsoluteIndexed<'a> {
-    fn read(&mut self) -> u8 {
-        let base = self.cpu.fetch_word();
+impl AddressingMode for AbsoluteIndexed {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        let base = cpu.fetch_word();
         self.at = base.wrapping_add(self.index as Address);
 
         if self.check_xpage && does_x_page(base, self.at) {
-            self.cpu.cycle_count += 1;
+            cpu.cycle_count += 1;
         }
 
-        self.cpu.read(self.at)
-    }
-
-    fn write(&mut self, value: u8) {
-        self.cpu.write(self.at, value);
+        cpu.read(self.at)
     }
 }
 
 // indexed indirect addressing
-struct IndexedIndirect<'a> {
+struct IndexedIndirect {
     at: Address,
-    cpu: &'a mut Cpu,
 }
 
-impl<'a> AddressingMode for IndexedIndirect<'a> {
-    fn read(&mut self) -> u8 {
-        let base = self.cpu.fetch();
+impl AddressingMode for IndexedIndirect {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        let base = cpu.fetch();
 
-        let lo = base.wrapping_add(self.cpu.x) as Address;
+        let lo = base.wrapping_add(cpu.x) as Address;
         let hi = (lo + 1) & 0x00ff;
 
-        self.at = self.cpu.read(lo) as Address |
-                  (self.cpu.read(hi) as Address) << 8;
-        self.cpu.read(self.at)
-    }
-
-    fn write(&mut self, value: u8) {
-        self.cpu.write(self.at, value);
+        self.at = cpu.read(lo) as Address |
+                  (cpu.read(hi) as Address) << 8;
+        cpu.read(self.at)
     }
 }
 
 // indirect indexed addressing
-struct IndirectIndexed<'a> {
+struct IndirectIndexed {
     at: Address,
-    cpu: &'a mut Cpu,
 }
 
-impl<'a> AddressingMode for IndirectIndexed<'a> {
-    fn read(&mut self) -> u8 {
-        let lo = self.cpu.fetch() as Address;
+impl AddressingMode for IndirectIndexed {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        let lo = cpu.fetch() as Address;
         let hi = (lo + 1) & 0x00ff;
 
-        let base = self.cpu.read(lo) as Address |
-                   (self.cpu.read(hi) as Address) << 8;
-        self.at = base.wrapping_add(self.cpu.y as Address);
+        let base = cpu.read(lo) as Address |
+                   (cpu.read(hi) as Address) << 8;
+        self.at = base.wrapping_add(cpu.y as Address);
 
         if does_x_page(base, self.at) {
-            self.cpu.cycle_count += 1;
+            cpu.cycle_count += 1;
         }
 
-        self.cpu.read(self.at)
-    }
-
-    fn write(&mut self, value: u8) {
-        self.cpu.write(self.at, value);
+        cpu.read(self.at)
     }
 }
 
 // relative addressing
-struct Relative<'a> {
+struct Relative {
     at: Address,
-    cpu: &'a mut Cpu,
 }
 
-impl<'a> AddressingMode for Relative<'a> {
-    fn read(&mut self) -> u8 {
-        let offset = self.cpu.fetch() as i8 as i16;
-        self.at = (self.cpu.pc as i16).wrapping_add(offset) as Address;
+impl AddressingMode for Relative {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        let offset = cpu.fetch() as i8 as i16;
+        self.at = (cpu.pc as i16).wrapping_add(offset) as Address;
         0
+    }
+
+    fn write(&mut self, _: &mut Cpu, _: Address, _: u8) {
+        panic!("write is not allowed in this addressing mode");
     }
 }
 
@@ -226,7 +198,12 @@ impl Cpu {
     }
 
     #[inline(always)]
-    fn set_flag(&mut self, flag: u8, condition: bool) {
+    fn set_flag(&mut self, flag: u8) {
+        self.p |= flag;
+    }
+
+    #[inline(always)]
+    fn set_flag_if(&mut self, flag: u8, condition: bool) {
         if condition {
             self.p |= flag; 
         }
@@ -244,8 +221,8 @@ impl Cpu {
 
     #[inline(always)]
     fn set_zn(&mut self, value: u8) {
-        self.set_flag(FLAG_Z, value == 0);
-        self.set_flag(FLAG_N, value & 0x80 != 0);
+        self.set_flag_if(FLAG_Z, value == 0);
+        self.set_flag_if(FLAG_N, value & 0x80 != 0);
     }
 
     #[inline(always)]
@@ -272,44 +249,76 @@ impl Cpu {
         }
     }
 
-    fn adc<M: AddressingMode>(&mut self, mut mode: M) -> u8 {
-        let operand = mode.read();
+    fn adc(&mut self, operand: u8) -> u8 {
         let mut result = operand as u16 + self.a as u16;
         if self.is_flag_set(FLAG_C) {
             result += 1;
         }
 
-        self.set_flag(FLAG_C, result > 0xff);
+        self.set_flag_if(FLAG_C, result > 0xff);
 
         let result = result as u8;
         self.set_zn(result);
 
         let a = self.a;
-        self.set_flag(FLAG_V, (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0);
+        self.set_flag_if(FLAG_V, (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0);
 
         self.a = result;
         result
     }
 
-    fn and<M: AddressingMode>(&mut self, mut mode: M) -> u8 {
-        let operand = mode.read();
+    fn and(&mut self, operand: u8) -> u8 {
         let result = operand & self.a;
         self.set_zn(result);
         self.a = result;
         result
     }
 
-    fn asl<M: AddressingMode>(&mut self, mut mode: M) -> u8 {
-        let operand = mode.read();
-        self.set_flag(FLAG_C, operand & 0x80 != 0);
+    fn asl(&mut self, operand: u8) -> u8 {
+        self.set_flag_if(FLAG_C, operand & 0x80 != 0);
         let result = operand << 1;
         self.set_zn(result);
         result
     }
 
-    fn bcc(&mut self, mut mode: Relative) {
-        mode.read();
-        let condition = !self.is_flag_set(FLAG_C);
-        self.jump_on_condition(mode.at, condition);
+    fn bcc(&mut self, at: Address) {
+        let cond = !self.is_flag_set(FLAG_C);
+        self.jump_on_condition(at, cond);
+    }
+
+    fn bcs(&mut self, at: Address) {
+        let cond = self.is_flag_set(FLAG_C);
+        self.jump_on_condition(at, cond);
+    }
+
+    fn beq(&mut self, at: Address) {
+        let cond = self.is_flag_set(FLAG_Z);
+        self.jump_on_condition(at, cond);
+    }
+
+    fn bmi(&mut self, at: Address) {
+        let cond = self.is_flag_set(FLAG_N);
+        self.jump_on_condition(at, cond);
+    }
+
+    fn bne(&mut self, at: Address) {
+        let cond = !self.is_flag_set(FLAG_Z);
+        self.jump_on_condition(at, cond);
+    }
+
+    fn bpl(&mut self, at: Address) {
+        let cond = !self.is_flag_set(FLAG_N);
+        self.jump_on_condition(at, cond);
+    }
+
+    fn bit(&mut self, operand: u8) {
+        self.set_flag_if(FLAG_N, operand & 0x80 != 0);
+        self.set_flag_if(FLAG_V, operand & 0x40 != 0);
+        if operand & self.a == 0 {
+            self.set_flag(FLAG_Z);
+        }
+        else {
+            self.clear_flag(FLAG_Z);
+        }
     }
 }
