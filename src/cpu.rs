@@ -239,6 +239,19 @@ impl Cpu {
         value
     }
 
+    #[inline(always)]
+    fn push(&mut self, value: u8) {
+        let at = self.sp as Address + 0x0100;
+        self.write(at, value);
+        self.sp = self.sp.wrapping_sub(1);
+    }
+
+    #[inline(always)]
+    fn pop(&mut self) -> u8 {
+        self.sp = self.sp.wrapping_add(1);
+        self.read(self.sp as Address + 0x0100)
+    }
+
     fn jump_on_condition(&mut self, at: Address, condition: bool) {
         if condition {
             self.cycle_count += 1;
