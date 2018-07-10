@@ -324,6 +324,16 @@ impl Cpu {
         self.jump_on_condition(at, cond);
     }
 
+    fn bvc(&mut self, at: Address) {
+        let cond = !self.is_flag_set(FLAG_V);
+        self.jump_on_condition(at, cond);
+    }
+
+    fn bvs(&mut self, at: Address) {
+        let cond = self.is_flag_set(FLAG_V);
+        self.jump_on_condition(at, cond);
+    }
+
     fn bit(&mut self, operand: u8) {
         self.set_flag_if(FLAG_N, operand & 0x80 != 0);
         self.set_flag_if(FLAG_V, operand & 0x40 != 0);
@@ -333,5 +343,32 @@ impl Cpu {
         else {
             self.clear_flag(FLAG_Z);
         }
+    }
+
+    #[inline(always)]
+    fn clc(&mut self, _: u8) {
+        self.clear_flag(FLAG_C);
+    }
+
+    #[inline(always)]
+    fn cld(&mut self, _: u8) {
+        self.clear_flag(FLAG_D);
+    }
+
+    #[inline(always)]
+    fn cli(&mut self, _: u8) {
+        self.clear_flag(FLAG_I);
+    }
+
+    #[inline(always)]
+    fn clv(&mut self, _: u8) {
+        self.clear_flag(FLAG_V);
+    }
+
+    // cmp, cpx, cpy
+    fn cmp_with_reg(&mut self, reg: u8, operand: u8) {
+        let result = reg as i8 - operand as i8;
+        self.set_flag_if(FLAG_C, result >= 0);
+        self.set_zn(result as u8);
     }
 }
