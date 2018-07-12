@@ -220,7 +220,7 @@ impl Cpu {
     }
 
     #[inline(always)]
-    fn set_zn(&mut self, value: u8) {
+    fn set_zero_negative(&mut self, value: u8) {
         self.set_flag_if(FLAG_ZERO, value == 0);
         self.set_flag_if(FLAG_NEGATIVE, value & 0x80 != 0);
     }
@@ -271,7 +271,7 @@ impl Cpu {
         self.set_flag_if(FLAG_CARRY, result > 0xff);
 
         let result = result as u8;
-        self.set_zn(result);
+        self.set_zero_negative(result);
 
         let a = self.a;
         self.set_flag_if(FLAG_OVERFLOW, (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0);
@@ -282,7 +282,7 @@ impl Cpu {
 
     fn and(&mut self, operand: u8) -> u8 {
         let result = operand & self.a;
-        self.set_zn(result);
+        self.set_zero_negative(result);
         self.a = result;
         result
     }
@@ -290,7 +290,7 @@ impl Cpu {
     fn asl(&mut self, operand: u8) -> u8 {
         self.set_flag_if(FLAG_CARRY, operand & 0x80 != 0);
         let result = operand << 1;
-        self.set_zn(result);
+        self.set_zero_negative(result);
         result
     }
 
@@ -369,24 +369,24 @@ impl Cpu {
     fn cmp_with_reg(&mut self, reg: u8, operand: u8) {
         let result = reg as i8 - operand as i8;
         self.set_flag_if(FLAG_CARRY, result >= 0);
-        self.set_zn(result as u8);
+        self.set_zero_negative(result as u8);
     }
 
     fn dec(&mut self, operand: u8) -> u8 {
         let result = operand.wrapping_sub(1);
-        self.set_zn(result);
+        self.set_zero_negative(result);
         result
     }
 
     fn dex(&mut self) {
         let result = self.x.wrapping_sub(1);
-        self.set_zn(result);
+        self.set_zero_negative(result);
         self.x = result;
     }
 
     fn dey(&mut self) {
         let result = self.y.wrapping_sub(1);
-        self.set_zn(result);
+        self.set_zero_negative(result);
         self.y = result;
     }
 }
