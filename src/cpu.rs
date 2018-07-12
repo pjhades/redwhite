@@ -389,4 +389,41 @@ impl Cpu {
         self.set_zero_negative(result);
         self.y = result;
     }
+
+    fn eor(&mut self, operand: u8) -> u8 {
+        let result = self.a ^ operand;
+        self.set_zero_negative(result);
+        self.a = result;
+        result
+    }
+
+    fn inc(&mut self, operand: u8) -> u8 {
+        let result = operand.wrapping_add(1);
+        self.set_zero_negative(result);
+        result
+    }
+
+    fn inx(&mut self) -> u8 {
+        let result = self.x.wrapping_add(1);
+        self.set_zero_negative(result);
+        result
+    }
+
+    fn iny(&mut self) -> u8 {
+        let result = self.y.wrapping_add(1);
+        self.set_zero_negative(result);
+        result
+    }
+
+    #[inline(always)]
+    fn jmp(&mut self, at: Address) {
+        self.pc = at;
+    }
+
+    fn jsr(&mut self, at: Address) {
+        let ret = self.pc.saturating_sub(1);
+        self.push(((ret & 0xff00) >> 8) as u8);
+        self.push((ret & 0x00ff) as u8);
+        self.pc = at;
+    }
 }
