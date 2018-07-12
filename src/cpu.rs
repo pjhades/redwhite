@@ -225,28 +225,24 @@ impl Cpu {
         self.set_flag_if(FLAG_NEGATIVE, value & 0x80 != 0);
     }
 
-    #[inline(always)]
     fn fetch(&mut self) -> u8 {
         let value = self.read(self.pc);
         self.pc += 1;
         value
     }
 
-    #[inline(always)]
     fn fetch_word(&mut self) -> u16 {
         let value = self.read_word(self.pc);
         self.pc += 2;
         value
     }
 
-    #[inline(always)]
     fn push(&mut self, value: u8) {
         let at = self.sp as Address + 0x0100;
         self.write(at, value);
         self.sp = self.sp.wrapping_sub(1);
     }
 
-    #[inline(always)]
     fn pop(&mut self) -> u8 {
         self.sp = self.sp.wrapping_add(1);
         self.read(self.sp as Address + 0x0100)
