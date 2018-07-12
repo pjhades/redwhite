@@ -1,13 +1,13 @@
 use mem::{Address, Memory, Access};
 
-const FLAG_N: u8 = 0b1000_0000;
-const FLAG_V: u8 = 0b0100_0000;
-const FLAG_X: u8 = 0b0010_0000;
-const FLAG_B: u8 = 0b0001_0000;
-const FLAG_D: u8 = 0b0000_1000;
-const FLAG_I: u8 = 0b0000_0100;
-const FLAG_Z: u8 = 0b0000_0010;
-const FLAG_C: u8 = 0b0000_0001;
+const FLAG_NEGATIVE:  u8 = 0b1000_0000;
+const FLAG_OVERFLOW:  u8 = 0b0100_0000;
+const FLAG_X:         u8 = 0b0010_0000;
+const FLAG_BREAK:     u8 = 0b0001_0000;
+const FLAG_DECIMAL:   u8 = 0b0000_1000;
+const FLAG_INTERRUPT: u8 = 0b0000_0100;
+const FLAG_ZERO:      u8 = 0b0000_0010;
+const FLAG_CARRY:     u8 = 0b0000_0001;
 
 pub struct Cpu {
     a: u8,
@@ -221,8 +221,8 @@ impl Cpu {
 
     #[inline(always)]
     fn set_zn(&mut self, value: u8) {
-        self.set_flag_if(FLAG_Z, value == 0);
-        self.set_flag_if(FLAG_N, value & 0x80 != 0);
+        self.set_flag_if(FLAG_ZERO, value == 0);
+        self.set_flag_if(FLAG_NEGATIVE, value & 0x80 != 0);
     }
 
     #[inline(always)]
@@ -264,17 +264,17 @@ impl Cpu {
 
     fn adc(&mut self, operand: u8) -> u8 {
         let mut result = operand as u16 + self.a as u16;
-        if self.is_flag_set(FLAG_C) {
+        if self.is_flag_set(FLAG_CARRY) {
             result += 1;
         }
 
-        self.set_flag_if(FLAG_C, result > 0xff);
+        self.set_flag_if(FLAG_CARRY, result > 0xff);
 
         let result = result as u8;
         self.set_zn(result);
 
         let a = self.a;
-        self.set_flag_if(FLAG_V, (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0);
+        self.set_flag_if(FLAG_OVERFLOW, (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0);
 
         self.a = result;
         result
@@ -288,87 +288,87 @@ impl Cpu {
     }
 
     fn asl(&mut self, operand: u8) -> u8 {
-        self.set_flag_if(FLAG_C, operand & 0x80 != 0);
+        self.set_flag_if(FLAG_CARRY, operand & 0x80 != 0);
         let result = operand << 1;
         self.set_zn(result);
         result
     }
 
     fn bcc(&mut self, at: Address) {
-        let cond = !self.is_flag_set(FLAG_C);
+        let cond = !self.is_flag_set(FLAG_CARRY);
         self.jump_on_condition(at, cond);
     }
 
     fn bcs(&mut self, at: Address) {
-        let cond = self.is_flag_set(FLAG_C);
+        let cond = self.is_flag_set(FLAG_CARRY);
         self.jump_on_condition(at, cond);
     }
 
     fn beq(&mut self, at: Address) {
-        let cond = self.is_flag_set(FLAG_Z);
+        let cond = self.is_flag_set(FLAG_ZERO);
         self.jump_on_condition(at, cond);
     }
 
     fn bmi(&mut self, at: Address) {
-        let cond = self.is_flag_set(FLAG_N);
+        let cond = self.is_flag_set(FLAG_NEGATIVE);
         self.jump_on_condition(at, cond);
     }
 
     fn bne(&mut self, at: Address) {
-        let cond = !self.is_flag_set(FLAG_Z);
+        let cond = !self.is_flag_set(FLAG_ZERO);
         self.jump_on_condition(at, cond);
     }
 
     fn bpl(&mut self, at: Address) {
-        let cond = !self.is_flag_set(FLAG_N);
+        let cond = !self.is_flag_set(FLAG_NEGATIVE);
         self.jump_on_condition(at, cond);
     }
 
     fn bvc(&mut self, at: Address) {
-        let cond = !self.is_flag_set(FLAG_V);
+        let cond = !self.is_flag_set(FLAG_OVERFLOW);
         self.jump_on_condition(at, cond);
     }
 
     fn bvs(&mut self, at: Address) {
-        let cond = self.is_flag_set(FLAG_V);
+        let cond = self.is_flag_set(FLAG_OVERFLOW);
         self.jump_on_condition(at, cond);
     }
 
     fn bit(&mut self, operand: u8) {
-        self.set_flag_if(FLAG_N, operand & 0x80 != 0);
-        self.set_flag_if(FLAG_V, operand & 0x40 != 0);
+        self.set_flag_if(FLAG_NEGATIVE, operand & 0x80 != 0);
+        self.set_flag_if(FLAG_OVERFLOW, operand & 0x40 != 0);
         if operand & self.a == 0 {
-            self.set_flag(FLAG_Z);
+            self.set_flag(FLAG_ZERO);
         }
         else {
-            self.clear_flag(FLAG_Z);
+            self.clear_flag(FLAG_ZERO);
         }
     }
 
     #[inline(always)]
     fn clc(&mut self, _: u8) {
-        self.clear_flag(FLAG_C);
+        self.clear_flag(FLAG_CARRY);
     }
 
     #[inline(always)]
     fn cld(&mut self, _: u8) {
-        self.clear_flag(FLAG_D);
+        self.clear_flag(FLAG_DECIMAL);
     }
 
     #[inline(always)]
     fn cli(&mut self, _: u8) {
-        self.clear_flag(FLAG_I);
+        self.clear_flag(FLAG_INTERRUPT);
     }
 
     #[inline(always)]
     fn clv(&mut self, _: u8) {
-        self.clear_flag(FLAG_V);
+        self.clear_flag(FLAG_OVERFLOW);
     }
 
     // cmp, cpx, cpy
     fn cmp_with_reg(&mut self, reg: u8, operand: u8) {
         let result = reg as i8 - operand as i8;
-        self.set_flag_if(FLAG_C, result >= 0);
+        self.set_flag_if(FLAG_CARRY, result >= 0);
         self.set_zn(result as u8);
     }
 }
