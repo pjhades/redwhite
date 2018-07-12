@@ -371,4 +371,22 @@ impl Cpu {
         self.set_flag_if(FLAG_CARRY, result >= 0);
         self.set_zn(result as u8);
     }
+
+    fn dec(&mut self, operand: u8) -> u8 {
+        let result = operand.wrapping_sub(1);
+        self.set_zn(result);
+        result
+    }
+
+    fn dex(&mut self) {
+        let result = self.x.wrapping_sub(1);
+        self.set_zn(result);
+        self.x = result;
+    }
+
+    fn dey(&mut self) {
+        let result = self.y.wrapping_sub(1);
+        self.set_zn(result);
+        self.y = result;
+    }
 }
