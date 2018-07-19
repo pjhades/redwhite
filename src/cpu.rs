@@ -276,11 +276,10 @@ impl Cpu {
         result
     }
 
-    fn and(&mut self, operand: u8) -> u8 {
+    fn and(&mut self, operand: u8) {
         let result = operand & self.a;
         self.set_zero_negative(result);
         self.a = result;
-        result
     }
 
     fn asl(&mut self, operand: u8) -> u8 {
@@ -386,11 +385,10 @@ impl Cpu {
         self.y = result;
     }
 
-    fn eor(&mut self, operand: u8) -> u8 {
+    fn eor(&mut self, operand: u8) {
         let result = self.a ^ operand;
         self.set_zero_negative(result);
         self.a = result;
-        result
     }
 
     fn inc(&mut self, operand: u8) -> u8 {
@@ -420,6 +418,70 @@ impl Cpu {
         let ret = self.pc.saturating_sub(1);
         self.push(((ret & 0xff00) >> 8) as u8);
         self.push((ret & 0x00ff) as u8);
+        self.pc = at;
+    }
+
+    fn lda(&mut self, operand: u8) {
+        self.set_zero_negative(operand);
+        self.a = operand;
+    }
+
+    fn ldx(&mut self, operand: u8) {
+        self.set_zero_negative(operand);
+        self.x = operand;
+    }
+
+    fn ldy(&mut self, operand: u8) {
+        self.set_zero_negative(operand);
+        self.y = operand;
+    }
+
+    fn lsr(&mut self, operand: u8) -> u8 {
+        self.set_flag_if(FLAG_CARRY, operand & 0x1 != 0);
+        let result = operand >> 1;
+        self.set_zero_negative(result);
+        result
+    }
+
+    fn ora(&mut self, operand: u8) {
+        let result = operand | self.a;
+        self.set_zero_negative(result);
+        self.a = result;
+    }
+
+    fn rol(&mut self, operand: u8) -> u8 {
+        let mut result = (operand as u16) << 1;
+        if self.is_flag_set(FLAG_CARRY) {
+            result |= 0x1;
+        }
+        self.set_flag_if(FLAG_CARRY, result > 0x00ff);
+        let result = result as u8;
+        self.set_zero_negative(result);
+        result
+    }
+
+    fn ror(&mut self, operand: u8) -> u8 {
+        let mut result = operand as u16;
+        if self.is_flag_set(FLAG_CARRY) {
+            result |= 0x0100;
+        }
+        self.set_flag_if(FLAG_CARRY, result & 0x0001 != 0);
+        let result = (result >> 1) as u8;
+        self.set_zero_negative(result);
+        result
+    }
+
+    fn rti(&mut self) {
+        self.p = self.pop();
+        let at = self.pop() as Address |
+                 (self.pop() as Address) << 8;
+        self.pc = at;
+    }
+
+    fn rts(&mut self) {
+        let at = self.pop() as Address |
+                 (self.pop() as Address) << 8;
+        let at = at.saturating_add(1);
         self.pc = at;
     }
 }
