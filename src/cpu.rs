@@ -417,7 +417,7 @@ impl Cpu {
     fn jsr(&mut self, at: Address) {
         let ret = self.pc.saturating_sub(1);
         self.push(((ret & 0xff00) >> 8) as u8);
-        self.push((ret & 0x00ff) as u8);
+        self.push(ret as u8);
         self.pc = at;
     }
 
@@ -483,5 +483,85 @@ impl Cpu {
                  (self.pop() as Address) << 8;
         let at = at.saturating_add(1);
         self.pc = at;
+    }
+
+    fn sbc(&mut self, operand: u8) -> u8 {
+        let result = self.a as u16
+            - operand as u16
+            - if self.is_flag_set(FLAG_CARRY) { 0 } else { 1 };
+        self.set_flag_if(FLAG_CARRY, result < 0x0100);
+        let result = result as u8;
+        self.set_zero_negative(result);
+        let a = self.a;
+        self.set_flag_if(FLAG_OVERFLOW, (a ^ result) & 0x80 != 0 && (a ^ operand) & 0x80 != 0);
+        self.a = result;
+        result
+    }
+
+    #[inline(always)]
+    fn sec(&mut self) {
+        self.set_flag(FLAG_CARRY);
+    }
+
+    #[inline(always)]
+    fn sei(&mut self) {
+        self.set_flag(FLAG_INTERRUPT);
+    }
+
+    fn sta(&mut self, at: Address) {
+        let value = self.a;
+        self.write(at, value);
+    }
+
+    fn stx(&mut self, at: Address) {
+        let value = self.a;
+        self.write(at, value);
+    }
+
+    fn sty(&mut self, at: Address) {
+        let value = self.y;
+        self.write(at, value);
+    }
+
+    fn tax(&mut self) {
+        let value = self.a;
+        self.set_zero_negative(value);
+        self.x = value;
+    }
+
+    fn tay(&mut self) {
+        let value = self.a;
+        self.set_zero_negative(value);
+        self.y = value;
+    }
+
+    fn tsx(&mut self) {
+        let value = self.sp;
+        self.set_zero_negative(value);
+        self.x = value;
+    }
+
+    fn tsy(&mut self) {
+        let value = self.sp;
+        self.set_zero_negative(value);
+        self.y = value;
+    }
+
+    fn txa(&mut self) {
+        let value = self.x;
+        self.set_zero_negative(value);
+        self.a = value;
+    }
+
+    fn txs(&mut self) {
+        let value = self.x;
+        self.set_zero_negative(value);
+        self.sp = value;
+    }
+
+    fn tya(&mut self) {
+        let value = self.y;
+        self.set_zero_negative(value);
+        self.a = value;
     }
 }
