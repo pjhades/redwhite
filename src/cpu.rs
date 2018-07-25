@@ -59,6 +59,12 @@ impl AddressingMode for Accumulator {
 // immediate addressing
 struct Immediate;
 
+impl Immediate {
+    fn new() -> Self {
+        Immediate {}
+    }
+}
+
 impl AddressingMode for Immediate {
     fn read(&mut self, cpu: &mut Cpu) -> u8 {
         cpu.fetch()
@@ -71,7 +77,13 @@ impl AddressingMode for Immediate {
 
 // zero page addressing
 struct ZeroPage {
-    at: Address,
+    at: Address
+}
+
+impl ZeroPage {
+    fn new() -> Self {
+        ZeroPage { at: 0 }
+    }
 }
 
 impl AddressingMode for ZeroPage {
@@ -81,22 +93,45 @@ impl AddressingMode for ZeroPage {
     }
 }
 
-// zero page indexed addressing
-struct ZeroPageIndexed {
-    at: Address,
-    index: u8,
+// zero page X indexed addressing
+struct ZeroPageX {
+    at: Address
 }
 
-impl AddressingMode for ZeroPageIndexed {
+impl ZeroPageX {
+    fn new() -> Self {
+        ZeroPageX { at: 0 }
+    }
+}
+
+impl AddressingMode for ZeroPageX {
     fn read(&mut self, cpu: &mut Cpu) -> u8 {
-        self.at = (cpu.fetch() as Address + self.index as Address) & 0x00ff;
+        self.at = (cpu.fetch() as Address + cpu.x as Address) & 0x00ff;
+        cpu.read(self.at)
+    }
+}
+
+// zero page Y indexed addressing
+struct ZeroPageY {
+    at: Address
+}
+
+impl ZeroPageY {
+    fn new() -> Self {
+        ZeroPageY { at: 0 }
+    }
+}
+
+impl AddressingMode for ZeroPageY {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        self.at = (cpu.fetch() as Address + cpu.y as Address) & 0x00ff;
         cpu.read(self.at)
     }
 }
 
 // absolute addressing
 struct Absolute {
-    at: Address,
+    at: Address
 }
 
 impl AddressingMode for Absolute {
@@ -563,5 +598,24 @@ impl Cpu {
         let value = self.y;
         self.set_zero_negative(value);
         self.a = value;
+    }
+}
+
+macro_rules! ro {
+    ($inst:ident, $mode:ident, $cpu:expr) => {
+        {
+            let operand = $mode::new().read($cpu);
+            $cpu.$inst(operand);
+        }
+    }
+}
+
+fn decode(cpu: &mut Cpu) {
+    let opcode = cpu.fetch();
+    match opcode {
+        0x69 => ro!(adc, Immediate, cpu),
+        0x65 => ro!(adc, ZeroPage, cpu),
+        0x75 => ro!(adc, ZeroPageX, cpu),
+        _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
 }
