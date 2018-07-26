@@ -36,144 +36,66 @@ fn does_x_page(a1: Address, a2: Address) -> bool {
     (a1 >> 8) == (a2 >> 8)
 }
 
-// addressing modes
-trait AddressingMode {
-    fn read(&mut self, cpu: &mut Cpu) -> u8;
-    fn write(&mut self, cpu: &mut Cpu, at: Address, value: u8) {
-        cpu.write(at, value);
-    }
+struct AddressingMode {
+    at: Address,
 }
-// accumulator addressing
-struct Accumulator;
 
-impl AddressingMode for Accumulator {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+impl AddressingMode {
+    fn new() -> Self {
+        AddressingMode { at: 0 }
+    }
+
+    #[inline(always)]
+    fn writeback(&mut self, cpu: &mut Cpu, value: u8) {
+        cpu.write(self.at, value);
+    }
+
+    // accumulator
+    fn accumulator(&mut self, cpu: &mut Cpu) -> u8 {
         cpu.a
     }
 
-    fn write(&mut self, cpu: &mut Cpu, _: Address, value: u8) {
+    fn accumulator_writeback(&mut self, cpu: &mut Cpu, value: u8) {
         cpu.a = value;
     }
-}
 
-// immediate addressing
-struct Immediate;
-
-impl Immediate {
-    fn new() -> Self {
-        Immediate {}
-    }
-}
-
-impl AddressingMode for Immediate {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn immediate(&mut self, cpu: &mut Cpu) -> u8 {
         cpu.fetch()
     }
 
-    fn write(&mut self, _: &mut Cpu, _: Address, _: u8) {
-        panic!("write is not allowed in this addressing mode");
-    }
-}
-
-// zero page addressing
-struct ZeroPage {
-    at: Address
-}
-
-impl ZeroPage {
-    fn new() -> Self {
-        ZeroPage { at: 0 }
-    }
-}
-
-impl AddressingMode for ZeroPage {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn zeropage(&mut self, cpu: &mut Cpu) -> u8 {
         self.at = cpu.fetch() as Address;
         cpu.read(self.at)
     }
-}
 
-// zero page X indexed addressing
-struct ZeroPageX {
-    at: Address
-}
-
-impl ZeroPageX {
-    fn new() -> Self {
-        ZeroPageX { at: 0 }
-    }
-}
-
-impl AddressingMode for ZeroPageX {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn zeropage_x(&mut self, cpu: &mut Cpu) -> u8 {
         self.at = (cpu.fetch() as Address + cpu.x as Address) & 0x00ff;
         cpu.read(self.at)
     }
-}
 
-// zero page Y indexed addressing
-struct ZeroPageY {
-    at: Address
-}
-
-impl ZeroPageY {
-    fn new() -> Self {
-        ZeroPageY { at: 0 }
-    }
-}
-
-impl AddressingMode for ZeroPageY {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn zeropage_y(&mut self, cpu: &mut Cpu) -> u8 {
         self.at = (cpu.fetch() as Address + cpu.y as Address) & 0x00ff;
         cpu.read(self.at)
     }
-}
 
-// absolute addressing
-struct Absolute {
-    at: Address
-}
-
-impl AddressingMode for Absolute {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn absolute(&mut self, cpu: &mut Cpu) -> u8 {
         self.at = cpu.fetch_word();
         cpu.read(self.at)
     }
-}
 
-// absolute X addressing
-struct AbsoluteX {
-    at: Address
-}
-
-impl AddressingMode for AbsoluteX {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn absolute_x(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch_word();
         self.at = base.wrapping_add(cpu.x as Address);
         cpu.read(self.at)
     }
-}
 
-// absolute Y addressing
-struct AbsoluteY {
-    at: Address
-}
-
-impl AddressingMode for AbsoluteY {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn absolute_y(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch_word();
         self.at = base.wrapping_add(cpu.y as Address);
         cpu.read(self.at)
     }
-}
 
-// absolute X addressing with page cross check
-struct AbsoluteXChecked {
-    at: Address
-}
-
-impl AddressingMode for AbsoluteXChecked {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn absolute_x_checked(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch_word();
         self.at = base.wrapping_add(cpu.x as Address);
 
@@ -183,15 +105,8 @@ impl AddressingMode for AbsoluteXChecked {
 
         cpu.read(self.at)
     }
-}
 
-// absolute Y addressing
-struct AbsoluteYChecked {
-    at: Address
-}
-
-impl AddressingMode for AbsoluteYChecked {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn absolute_y_checked(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch_word();
         self.at = base.wrapping_add(cpu.y as Address);
 
@@ -201,38 +116,24 @@ impl AddressingMode for AbsoluteYChecked {
 
         cpu.read(self.at)
     }
-}
 
-// indexed indirect addressing
-struct IndexedIndirect {
-    at: Address
-}
-
-impl AddressingMode for IndexedIndirect {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn indexed_indirect(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch();
-
         let lo = base.wrapping_add(cpu.x) as Address;
         let hi = (lo + 1) & 0x00ff;
 
         self.at = cpu.read(lo) as Address |
                   (cpu.read(hi) as Address) << 8;
+
         cpu.read(self.at)
     }
-}
 
-// indirect indexed addressing
-struct IndirectIndexed {
-    at: Address
-}
-
-impl AddressingMode for IndirectIndexed {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn indirect_indexed(&mut self, cpu: &mut Cpu) -> u8 {
         let lo = cpu.fetch() as Address;
         let hi = (lo + 1) & 0x00ff;
-
         let base = cpu.read(lo) as Address |
                    (cpu.read(hi) as Address) << 8;
+
         self.at = base.wrapping_add(cpu.y as Address);
 
         if does_x_page(base, self.at) {
@@ -241,22 +142,11 @@ impl AddressingMode for IndirectIndexed {
 
         cpu.read(self.at)
     }
-}
 
-// relative addressing
-struct Relative {
-    at: Address
-}
-
-impl AddressingMode for Relative {
-    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+    fn relative(&mut self, cpu: &mut Cpu) -> u8 {
         let offset = cpu.fetch() as i8 as i16;
         self.at = (cpu.pc as i16).wrapping_add(offset) as Address;
         0
-    }
-
-    fn write(&mut self, _: &mut Cpu, _: Address, _: u8) {
-        panic!("write is not allowed in this addressing mode");
     }
 }
 
@@ -643,10 +533,11 @@ impl Cpu {
     }
 }
 
-macro_rules! ro {
+macro_rules! read_only {
     ($inst:ident, $mode:ident, $cpu:expr) => {
         {
-            let operand = $mode::new().read($cpu);
+            let mut m = AddressingMode::new();
+            let operand = m.$mode($cpu);
             $cpu.$inst(operand);
         }
     }
@@ -655,9 +546,9 @@ macro_rules! ro {
 fn decode(cpu: &mut Cpu) {
     let opcode = cpu.fetch();
     match opcode {
-        0x69 => ro!(adc, Immediate, cpu),
-        0x65 => ro!(adc, ZeroPage, cpu),
-        0x75 => ro!(adc, ZeroPageX, cpu),
+        0x69 => read_only!(adc, immediate, cpu),
+        0x65 => read_only!(adc, zeropage, cpu),
+        0x75 => read_only!(adc, zeropage_x, cpu),
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
 }
