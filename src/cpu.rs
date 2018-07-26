@@ -141,19 +141,61 @@ impl AddressingMode for Absolute {
     }
 }
 
-// absolute indexed addressing
-struct AbsoluteIndexed {
-    at: Address,
-    index: u8,
-    check_xpage: bool,
+// absolute X addressing
+struct AbsoluteX {
+    at: Address
 }
 
-impl AddressingMode for AbsoluteIndexed {
+impl AddressingMode for AbsoluteX {
     fn read(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch_word();
-        self.at = base.wrapping_add(self.index as Address);
+        self.at = base.wrapping_add(cpu.x as Address);
+        cpu.read(self.at)
+    }
+}
 
-        if self.check_xpage && does_x_page(base, self.at) {
+// absolute Y addressing
+struct AbsoluteY {
+    at: Address
+}
+
+impl AddressingMode for AbsoluteY {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        let base = cpu.fetch_word();
+        self.at = base.wrapping_add(cpu.y as Address);
+        cpu.read(self.at)
+    }
+}
+
+// absolute X addressing with page cross check
+struct AbsoluteXChecked {
+    at: Address
+}
+
+impl AddressingMode for AbsoluteXChecked {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        let base = cpu.fetch_word();
+        self.at = base.wrapping_add(cpu.x as Address);
+
+        if does_x_page(base, self.at) {
+            cpu.cycle_count += 1;
+        }
+
+        cpu.read(self.at)
+    }
+}
+
+// absolute Y addressing
+struct AbsoluteYChecked {
+    at: Address
+}
+
+impl AddressingMode for AbsoluteYChecked {
+    fn read(&mut self, cpu: &mut Cpu) -> u8 {
+        let base = cpu.fetch_word();
+        self.at = base.wrapping_add(cpu.y as Address);
+
+        if does_x_page(base, self.at) {
             cpu.cycle_count += 1;
         }
 
@@ -163,7 +205,7 @@ impl AddressingMode for AbsoluteIndexed {
 
 // indexed indirect addressing
 struct IndexedIndirect {
-    at: Address,
+    at: Address
 }
 
 impl AddressingMode for IndexedIndirect {
@@ -181,7 +223,7 @@ impl AddressingMode for IndexedIndirect {
 
 // indirect indexed addressing
 struct IndirectIndexed {
-    at: Address,
+    at: Address
 }
 
 impl AddressingMode for IndirectIndexed {
@@ -203,7 +245,7 @@ impl AddressingMode for IndirectIndexed {
 
 // relative addressing
 struct Relative {
-    at: Address,
+    at: Address
 }
 
 impl AddressingMode for Relative {
