@@ -51,14 +51,17 @@ impl AddressingMode {
     }
 
     // accumulator
+    #[inline(always)]
     fn accumulator(&mut self, cpu: &mut Cpu) -> u8 {
         cpu.a
     }
 
+    #[inline(always)]
     fn accumulator_writeback(&mut self, cpu: &mut Cpu, value: u8) {
         cpu.a = value;
     }
 
+    #[inline(always)]
     fn immediate(&mut self, cpu: &mut Cpu) -> u8 {
         cpu.fetch()
     }
@@ -308,22 +311,22 @@ impl Cpu {
     }
 
     #[inline(always)]
-    fn clc(&mut self, _: u8) {
+    fn clc(&mut self) {
         self.clear_flag(FLAG_CARRY);
     }
 
     #[inline(always)]
-    fn cld(&mut self, _: u8) {
+    fn cld(&mut self) {
         self.clear_flag(FLAG_DECIMAL);
     }
 
     #[inline(always)]
-    fn cli(&mut self, _: u8) {
+    fn cli(&mut self) {
         self.clear_flag(FLAG_INTERRUPT);
     }
 
     #[inline(always)]
-    fn clv(&mut self, _: u8) {
+    fn clv(&mut self) {
         self.clear_flag(FLAG_OVERFLOW);
     }
 
