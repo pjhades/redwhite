@@ -98,7 +98,7 @@ impl AddressingMode {
         cpu.read(self.at)
     }
 
-    fn absolute_x_checked(&mut self, cpu: &mut Cpu) -> u8 {
+    fn absolute_x_chk(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch_word();
         self.at = base.wrapping_add(cpu.x as Address);
 
@@ -109,7 +109,7 @@ impl AddressingMode {
         cpu.read(self.at)
     }
 
-    fn absolute_y_checked(&mut self, cpu: &mut Cpu) -> u8 {
+    fn absolute_y_chk(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch_word();
         self.at = base.wrapping_add(cpu.y as Address);
 
@@ -120,7 +120,8 @@ impl AddressingMode {
         cpu.read(self.at)
     }
 
-    fn indexed_indirect(&mut self, cpu: &mut Cpu) -> u8 {
+    // indexed indirect
+    fn indirect_x(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch();
         let lo = base.wrapping_add(cpu.x) as Address;
         let hi = (lo + 1) & 0x00ff;
@@ -131,7 +132,8 @@ impl AddressingMode {
         cpu.read(self.at)
     }
 
-    fn indirect_indexed(&mut self, cpu: &mut Cpu) -> u8 {
+    // indirect indexed
+    fn indirect_y(&mut self, cpu: &mut Cpu) -> u8 {
         let lo = cpu.fetch() as Address;
         let hi = (lo + 1) & 0x00ff;
         let base = cpu.read(lo) as Address |
@@ -537,10 +539,9 @@ impl Cpu {
 }
 
 macro_rules! read_only {
-    ($inst:ident, $mode:ident, $cpu:expr) => {
+    ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
         {
-            let mut m = AddressingMode::new();
-            let operand = m.$mode($cpu);
+            let operand = $m.$mode($cpu);
             $cpu.$inst(operand);
         }
     }
@@ -548,10 +549,27 @@ macro_rules! read_only {
 
 fn decode(cpu: &mut Cpu) {
     let opcode = cpu.fetch();
+    let mut mode = AddressingMode::new();
+
     match opcode {
-        0x69 => read_only!(adc, immediate, cpu),
-        0x65 => read_only!(adc, zeropage, cpu),
-        0x75 => read_only!(adc, zeropage_x, cpu),
+        0x69 => read_only!(adc, cpu, mode, immediate),
+        0x65 => read_only!(adc, cpu, mode, zeropage),
+        0x75 => read_only!(adc, cpu, mode, zeropage_x),
+        0x60 => read_only!(adc, cpu, mode, absolute),
+        0x70 => read_only!(adc, cpu, mode, absolute_x_chk),
+        0x79 => read_only!(adc, cpu, mode, absolute_y_chk),
+        0x61 => read_only!(adc, cpu, mode, indirect_x),
+        0x71 => read_only!(adc, cpu, mode, indirect_y),
+
+        0x29 => read_only!(and, cpu, mode, immediate),
+        0x25 => read_only!(and, cpu, mode, zeropage),
+        0x35 => read_only!(and, cpu, mode, zeropage_x),
+        0x2d => read_only!(and, cpu, mode, absolute),
+        0x3d => read_only!(and, cpu, mode, absolute_x_chk),
+        0x39 => read_only!(and, cpu, mode, absolute_y_chk),
+        0x21 => read_only!(and, cpu, mode, indirect_x),
+        0x31 => read_only!(and, cpu, mode, indirect_y),
+
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
 }
