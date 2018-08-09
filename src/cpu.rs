@@ -147,10 +147,9 @@ impl AddressingMode {
         cpu.read(self.at)
     }
 
-    fn relative(&mut self, cpu: &mut Cpu) -> u8 {
+    fn relative(&mut self, cpu: &mut Cpu) {
         let offset = cpu.fetch() as i8 as i16;
         self.at = (cpu.pc as i16).wrapping_add(offset) as Address;
-        0
     }
 }
 
@@ -551,47 +550,66 @@ macro_rules! rw {
         {
             let operand = $m.accumulator($cpu);
             let result = $cpu.$inst(operand);
-            $m.accumulator_wb(result);
+            $m.accumulator_wb($cpu, result);
         }
-    }
+    };
 
     ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
         {
             let operand = $m.$mode($cpu);
             let result = $cpu.$inst(operand);
-            $m.wb(result);
+            $m.wb($cpu, result);
+        }
+    }
+}
+
+macro_rules! j {
+    ($inst:ident, $cpu:ident, $m:ident) => {
+        {
+            $m.relative($cpu);
+            $cpu.$inst($m.at);
         }
     }
 }
 
 fn decode(cpu: &mut Cpu) {
     let opcode = cpu.fetch();
-    let mut mode = AddressingMode::new();
+    let mut m = AddressingMode::new();
 
     match opcode {
-        0x69 => r!(adc, cpu, mode, immediate),
-        0x65 => r!(adc, cpu, mode, zeropage),
-        0x75 => r!(adc, cpu, mode, zeropage_x),
-        0x60 => r!(adc, cpu, mode, absolute),
-        0x70 => r!(adc, cpu, mode, absolute_x_chk),
-        0x79 => r!(adc, cpu, mode, absolute_y_chk),
-        0x61 => r!(adc, cpu, mode, indirect_x),
-        0x71 => r!(adc, cpu, mode, indirect_y),
+        0x69 => r!(adc, cpu, m, immediate),
+        0x65 => r!(adc, cpu, m, zeropage),
+        0x75 => r!(adc, cpu, m, zeropage_x),
+        0x60 => r!(adc, cpu, m, absolute),
+        0x70 => r!(adc, cpu, m, absolute_x_chk),
+        0x79 => r!(adc, cpu, m, absolute_y_chk),
+        0x61 => r!(adc, cpu, m, indirect_x),
+        0x71 => r!(adc, cpu, m, indirect_y),
 
-        0x29 => r!(and, cpu, mode, immediate),
-        0x25 => r!(and, cpu, mode, zeropage),
-        0x35 => r!(and, cpu, mode, zeropage_x),
-        0x2d => r!(and, cpu, mode, absolute),
-        0x3d => r!(and, cpu, mode, absolute_x_chk),
-        0x39 => r!(and, cpu, mode, absolute_y_chk),
-        0x21 => r!(and, cpu, mode, indirect_x),
-        0x31 => r!(and, cpu, mode, indirect_y),
+        0x29 => r!(and, cpu, m, immediate),
+        0x25 => r!(and, cpu, m, zeropage),
+        0x35 => r!(and, cpu, m, zeropage_x),
+        0x2d => r!(and, cpu, m, absolute),
+        0x3d => r!(and, cpu, m, absolute_x_chk),
+        0x39 => r!(and, cpu, m, absolute_y_chk),
+        0x21 => r!(and, cpu, m, indirect_x),
+        0x31 => r!(and, cpu, m, indirect_y),
 
-        0x0a => rw!(asl, cpu, mode, accumulator),
-        0x06 => rw!(asl, cpu, mode, zeropage),
-        0x16 => rw!(asl, cpu, mode, zeropage_x),
-        0x0e => rw!(asl, cpu, mode, absolute),
-        0x1e => rw!(asl, cpu, mode, absolute_x),
+        0x0a => rw!(asl, cpu, m, accumulator),
+        0x06 => rw!(asl, cpu, m, zeropage),
+        0x16 => rw!(asl, cpu, m, zeropage_x),
+        0x0e => rw!(asl, cpu, m, absolute),
+        0x1e => rw!(asl, cpu, m, absolute_x),
+
+        0x90 => j!(bcc, cpu, m),
+        0xb0 => j!(bcs, cpu, m),
+        0xf0 => j!(beg, cpu, m),
+        0x30 => j!(bmi, cpu, m),
+        0xd0 => j!(bne, cpu, m),
+        0x10 => j!(bpl, cpu, m),
+
+        0x24 => r!(bit, cpu, m, zeropage),
+        0x2c => r!(bit, cpu, m, absolute),
 
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
