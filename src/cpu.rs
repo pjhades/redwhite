@@ -46,18 +46,17 @@ impl AddressingMode {
     }
 
     #[inline(always)]
-    fn writeback(&mut self, cpu: &mut Cpu, value: u8) {
+    fn wb(&mut self, cpu: &mut Cpu, value: u8) {
         cpu.write(self.at, value);
     }
 
-    // accumulator
     #[inline(always)]
     fn accumulator(&mut self, cpu: &mut Cpu) -> u8 {
         cpu.a
     }
 
     #[inline(always)]
-    fn accumulator_writeback(&mut self, cpu: &mut Cpu, value: u8) {
+    fn accumulator_wb(&mut self, cpu: &mut Cpu, value: u8) {
         cpu.a = value;
     }
 
@@ -538,11 +537,29 @@ impl Cpu {
     }
 }
 
-macro_rules! read_only {
+macro_rules! r {
     ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
         {
             let operand = $m.$mode($cpu);
             $cpu.$inst(operand);
+        }
+    }
+}
+
+macro_rules! rw {
+    ($inst:ident, $cpu:ident, $m:ident, accumulator) => {
+        {
+            let operand = $m.accumulator($cpu);
+            let result = $cpu.$inst(operand);
+            $m.accumulator_wb(result);
+        }
+    }
+
+    ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
+        {
+            let operand = $m.$mode($cpu);
+            let result = $cpu.$inst(operand);
+            $m.wb(result);
         }
     }
 }
@@ -552,23 +569,29 @@ fn decode(cpu: &mut Cpu) {
     let mut mode = AddressingMode::new();
 
     match opcode {
-        0x69 => read_only!(adc, cpu, mode, immediate),
-        0x65 => read_only!(adc, cpu, mode, zeropage),
-        0x75 => read_only!(adc, cpu, mode, zeropage_x),
-        0x60 => read_only!(adc, cpu, mode, absolute),
-        0x70 => read_only!(adc, cpu, mode, absolute_x_chk),
-        0x79 => read_only!(adc, cpu, mode, absolute_y_chk),
-        0x61 => read_only!(adc, cpu, mode, indirect_x),
-        0x71 => read_only!(adc, cpu, mode, indirect_y),
+        0x69 => r!(adc, cpu, mode, immediate),
+        0x65 => r!(adc, cpu, mode, zeropage),
+        0x75 => r!(adc, cpu, mode, zeropage_x),
+        0x60 => r!(adc, cpu, mode, absolute),
+        0x70 => r!(adc, cpu, mode, absolute_x_chk),
+        0x79 => r!(adc, cpu, mode, absolute_y_chk),
+        0x61 => r!(adc, cpu, mode, indirect_x),
+        0x71 => r!(adc, cpu, mode, indirect_y),
 
-        0x29 => read_only!(and, cpu, mode, immediate),
-        0x25 => read_only!(and, cpu, mode, zeropage),
-        0x35 => read_only!(and, cpu, mode, zeropage_x),
-        0x2d => read_only!(and, cpu, mode, absolute),
-        0x3d => read_only!(and, cpu, mode, absolute_x_chk),
-        0x39 => read_only!(and, cpu, mode, absolute_y_chk),
-        0x21 => read_only!(and, cpu, mode, indirect_x),
-        0x31 => read_only!(and, cpu, mode, indirect_y),
+        0x29 => r!(and, cpu, mode, immediate),
+        0x25 => r!(and, cpu, mode, zeropage),
+        0x35 => r!(and, cpu, mode, zeropage_x),
+        0x2d => r!(and, cpu, mode, absolute),
+        0x3d => r!(and, cpu, mode, absolute_x_chk),
+        0x39 => r!(and, cpu, mode, absolute_y_chk),
+        0x21 => r!(and, cpu, mode, indirect_x),
+        0x31 => r!(and, cpu, mode, indirect_y),
+
+        0x0a => rw!(asl, cpu, mode, accumulator),
+        0x06 => rw!(asl, cpu, mode, zeropage),
+        0x16 => rw!(asl, cpu, mode, zeropage_x),
+        0x0e => rw!(asl, cpu, mode, absolute),
+        0x1e => rw!(asl, cpu, mode, absolute_x),
 
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
