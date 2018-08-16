@@ -123,7 +123,7 @@ impl AddressingMode {
     fn indirect_x(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch();
         let lo = base.wrapping_add(cpu.x) as Address;
-        let hi = (lo + 1) & 0x00ff;
+        let hi = (lo as u8).wrapping_add(1) as Address;
 
         self.at = cpu.read(lo) as Address |
                   (cpu.read(hi) as Address) << 8;
@@ -134,7 +134,7 @@ impl AddressingMode {
     // indirect indexed
     fn indirect_y(&mut self, cpu: &mut Cpu) -> u8 {
         let lo = cpu.fetch() as Address;
-        let hi = (lo + 1) & 0x00ff;
+        let hi = (lo as u8).wrapping_add(1) as Address;
         let base = cpu.read(lo) as Address |
                    (cpu.read(hi) as Address) << 8;
 
@@ -358,21 +358,16 @@ impl Cpu {
         result
     }
 
-    fn inx(&mut self) -> u8 {
+    fn inx(&mut self) {
         let result = self.x.wrapping_add(1);
         self.set_zero_negative(result);
-        result
+        self.x = result;
     }
 
-    fn iny(&mut self) -> u8 {
+    fn iny(&mut self) {
         let result = self.y.wrapping_add(1);
         self.set_zero_negative(result);
-        result
-    }
-
-    #[inline(always)]
-    fn jmp(&mut self, at: Address) {
-        self.pc = at;
+        self.y = result;
     }
 
     fn jsr(&mut self, at: Address) {
@@ -632,8 +627,37 @@ fn decode(cpu: &mut Cpu) {
         0xde => rw!(dec, cpu, m, absolute_x),
 
         0xca => cpu.dex(),
-
         0x88 => cpu.dey(),
+
+        0x49 => r!(eor, cpu, m, immediate),
+        0x45 => r!(eor, cpu, m, zeropage),
+        0x55 => r!(eor, cpu, m, zeropage_x),
+        0x40 => r!(eor, cpu, m, absolute),
+        0x50 => r!(eor, cpu, m, absolute_x),
+        0x59 => r!(eor, cpu, m, absolute_y),
+        0x41 => r!(eor, cpu, m, indirect_x),
+        0x51 => r!(eor, cpu, m, indirect_y),
+
+        0xe6 => rw!(inc, cpu, m, zeropage),
+        0xf6 => rw!(inc, cpu, m, zeropage_x),
+        0xee => rw!(inc, cpu, m, absolute),
+        0xfe => rw!(inc, cpu, m, absolute_x),
+
+        0xe8 => cpu.inx(),
+        0xc8 => cpu.iny(),
+
+        // jmp
+        0x4c => cpu.pc = cpu.fetch_word(),
+        0x6c => {
+            let at = cpu.fetch_word();
+            cpu.pc = cpu.read(at) as Address |
+                     (cpu.read(at.wrapping_add(1)) as Address) << 8;
+        }
+
+        0x20 => {
+            let at = cpu.fetch_word();
+            cpu.jsr(at);
+        }
 
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
