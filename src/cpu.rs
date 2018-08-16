@@ -310,29 +310,20 @@ impl Cpu {
         }
     }
 
-    #[inline(always)]
-    fn clc(&mut self) {
-        self.clear_flag(FLAG_CARRY);
+    fn cmp(&mut self, operand: u8) {
+        let result = self.a as i8 - operand as i8;
+        self.set_flag_if(FLAG_CARRY, result >= 0);
+        self.set_zero_negative(result as u8);
     }
 
-    #[inline(always)]
-    fn cld(&mut self) {
-        self.clear_flag(FLAG_DECIMAL);
+    fn cpx(&mut self, operand: u8) {
+        let result = self.x as i8 - operand as i8;
+        self.set_flag_if(FLAG_CARRY, result >= 0);
+        self.set_zero_negative(result as u8);
     }
 
-    #[inline(always)]
-    fn cli(&mut self) {
-        self.clear_flag(FLAG_INTERRUPT);
-    }
-
-    #[inline(always)]
-    fn clv(&mut self) {
-        self.clear_flag(FLAG_OVERFLOW);
-    }
-
-    // cmp, cpx, cpy
-    fn cmp_with_reg(&mut self, reg: u8, operand: u8) {
-        let result = reg as i8 - operand as i8;
+    fn cpy(&mut self, operand: u8) {
+        let result = self.y as i8 - operand as i8;
         self.set_flag_if(FLAG_CARRY, result >= 0);
         self.set_zero_negative(result as u8);
     }
@@ -603,13 +594,46 @@ fn decode(cpu: &mut Cpu) {
 
         0x90 => j!(bcc, cpu, m),
         0xb0 => j!(bcs, cpu, m),
-        0xf0 => j!(beg, cpu, m),
+        0xf0 => j!(beq, cpu, m),
         0x30 => j!(bmi, cpu, m),
         0xd0 => j!(bne, cpu, m),
         0x10 => j!(bpl, cpu, m),
+        0x50 => j!(bvc, cpu, m),
+        0x70 => j!(bvs, cpu, m),
 
         0x24 => r!(bit, cpu, m, zeropage),
         0x2c => r!(bit, cpu, m, absolute),
+
+        0x18 => cpu.clear_flag(FLAG_CARRY),
+        0xd8 => cpu.clear_flag(FLAG_DECIMAL),
+        0x58 => cpu.clear_flag(FLAG_INTERRUPT),
+        0xb8 => cpu.clear_flag(FLAG_OVERFLOW),
+
+        0xc9 => r!(cmp, cpu, m, immediate),
+        0xc5 => r!(cmp, cpu, m, zeropage),
+        0xd5 => r!(cmp, cpu, m, zeropage_x),
+        0xcd => r!(cmp, cpu, m, absolute),
+        0xdd => r!(cmp, cpu, m, absolute_x),
+        0xd9 => r!(cmp, cpu, m, absolute_y),
+        0xc1 => r!(cmp, cpu, m, indirect_x),
+        0xd1 => r!(cmp, cpu, m, indirect_y),
+
+        0xe0 => r!(cpx, cpu, m, immediate),
+        0xe4 => r!(cpx, cpu, m, zeropage),
+        0xec => r!(cpx, cpu, m, absolute),
+
+        0xc0 => r!(cpy, cpu, m, immediate),
+        0xc4 => r!(cpy, cpu, m, zeropage),
+        0xcc => r!(cpy, cpu, m, absolute),
+
+        0xc6 => rw!(dec, cpu, m, zeropage),
+        0xd6 => rw!(dec, cpu, m, zeropage_x),
+        0xce => rw!(dec, cpu, m, absolute),
+        0xde => rw!(dec, cpu, m, absolute_x),
+
+        0xca => cpu.dex(),
+
+        0x88 => cpu.dey(),
 
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
