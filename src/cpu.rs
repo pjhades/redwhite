@@ -97,6 +97,7 @@ impl AddressingMode {
         cpu.read(self.at)
     }
 
+    // XXX set up a table indexed by opcode for these cross-page check cycles
     fn absolute_x_chk(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch_word();
         self.at = base.wrapping_add(cpu.x as Address);
@@ -133,6 +134,18 @@ impl AddressingMode {
 
     // indirect indexed
     fn indirect_y(&mut self, cpu: &mut Cpu) -> u8 {
+        let lo = cpu.fetch() as Address;
+        let hi = (lo as u8).wrapping_add(1) as Address;
+        let base = cpu.read(lo) as Address |
+                   (cpu.read(hi) as Address) << 8;
+
+        self.at = base.wrapping_add(cpu.y as Address);
+
+        cpu.read(self.at)
+    }
+
+    // XXX same
+    fn indirect_y_chk(&mut self, cpu: &mut Cpu) -> u8 {
         let lo = cpu.fetch() as Address;
         let hi = (lo as u8).wrapping_add(1) as Address;
         let base = cpu.read(lo) as Address |
@@ -228,22 +241,17 @@ impl Cpu {
         }
     }
 
-    fn adc(&mut self, operand: u8) -> u8 {
+    fn adc(&mut self, operand: u8) {
         let mut result = operand as u16 + self.a as u16;
         if self.is_flag_set(FLAG_CARRY) {
             result += 1;
         }
-
         self.set_flag_if(FLAG_CARRY, result > 0xff);
-
         let result = result as u8;
         self.set_zero_negative(result);
-
         let a = self.a;
         self.set_flag_if(FLAG_OVERFLOW, (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0);
-
         self.a = result;
-        result
     }
 
     fn and(&mut self, operand: u8) {
@@ -441,7 +449,7 @@ impl Cpu {
         self.pc = at;
     }
 
-    fn sbc(&mut self, operand: u8) -> u8 {
+    fn sbc(&mut self, operand: u8) {
         let result = self.a as u16
             - operand as u16
             - if self.is_flag_set(FLAG_CARRY) { 0 } else { 1 };
@@ -451,7 +459,6 @@ impl Cpu {
         let a = self.a;
         self.set_flag_if(FLAG_OVERFLOW, (a ^ result) & 0x80 != 0 && (a ^ operand) & 0x80 != 0);
         self.a = result;
-        result
     }
 
     #[inline(always)]
@@ -470,7 +477,7 @@ impl Cpu {
     }
 
     fn stx(&mut self, at: Address) {
-        let value = self.a;
+        let value = self.x;
         self.write(at, value);
     }
 
@@ -549,6 +556,15 @@ macro_rules! rw {
     }
 }
 
+macro_rules! w {
+    ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
+        {
+            $m.$mode($cpu);
+            $cpu.$inst($m.at);
+        }
+    }
+}
+
 macro_rules! j {
     ($inst:ident, $cpu:ident, $m:ident) => {
         {
@@ -570,7 +586,7 @@ fn decode(cpu: &mut Cpu) {
         0x70 => r!(adc, cpu, m, absolute_x_chk),
         0x79 => r!(adc, cpu, m, absolute_y_chk),
         0x61 => r!(adc, cpu, m, indirect_x),
-        0x71 => r!(adc, cpu, m, indirect_y),
+        0x71 => r!(adc, cpu, m, indirect_y_chk),
 
         0x29 => r!(and, cpu, m, immediate),
         0x25 => r!(and, cpu, m, zeropage),
@@ -579,7 +595,7 @@ fn decode(cpu: &mut Cpu) {
         0x3d => r!(and, cpu, m, absolute_x_chk),
         0x39 => r!(and, cpu, m, absolute_y_chk),
         0x21 => r!(and, cpu, m, indirect_x),
-        0x31 => r!(and, cpu, m, indirect_y),
+        0x31 => r!(and, cpu, m, indirect_y_chk),
 
         0x0a => rw!(asl, cpu, m, accumulator),
         0x06 => rw!(asl, cpu, m, zeropage),
@@ -611,7 +627,7 @@ fn decode(cpu: &mut Cpu) {
         0xdd => r!(cmp, cpu, m, absolute_x_chk),
         0xd9 => r!(cmp, cpu, m, absolute_y_chk),
         0xc1 => r!(cmp, cpu, m, indirect_x),
-        0xd1 => r!(cmp, cpu, m, indirect_y),
+        0xd1 => r!(cmp, cpu, m, indirect_y_chk),
 
         0xe0 => r!(cpx, cpu, m, immediate),
         0xe4 => r!(cpx, cpu, m, zeropage),
@@ -636,7 +652,7 @@ fn decode(cpu: &mut Cpu) {
         0x50 => r!(eor, cpu, m, absolute_x_chk),
         0x59 => r!(eor, cpu, m, absolute_y_chk),
         0x41 => r!(eor, cpu, m, indirect_x),
-        0x51 => r!(eor, cpu, m, indirect_y),
+        0x51 => r!(eor, cpu, m, indirect_y_chk),
 
         0xe6 => rw!(inc, cpu, m, zeropage),
         0xf6 => rw!(inc, cpu, m, zeropage_x),
@@ -659,6 +675,8 @@ fn decode(cpu: &mut Cpu) {
             cpu.jsr(at);
         }
 
+        0x60 => cpu.rts(),
+
         0xa9 => r!(lda, cpu, m, immediate),
         0xa5 => r!(lda, cpu, m, zeropage),
         0xb5 => r!(lda, cpu, m, zeropage_x),
@@ -666,7 +684,7 @@ fn decode(cpu: &mut Cpu) {
         0xbd => r!(lda, cpu, m, absolute_x_chk),
         0xb9 => r!(lda, cpu, m, absolute_y_chk),
         0xa1 => r!(lda, cpu, m, indirect_x),
-        0xb1 => r!(lda, cpu, m, indirect_y),
+        0xb1 => r!(lda, cpu, m, indirect_y_chk),
 
         0xa2 => r!(ldx, cpu, m, immediate),
         0xa6 => r!(ldx, cpu, m, zeropage),
@@ -695,7 +713,7 @@ fn decode(cpu: &mut Cpu) {
         0x1d => r!(ora, cpu, m, absolute_x_chk),
         0x19 => r!(ora, cpu, m, absolute_y_chk),
         0x01 => r!(ora, cpu, m, indirect_x),
-        0x11 => r!(ora, cpu, m, indirect_y),
+        0x11 => r!(ora, cpu, m, indirect_y_chk),
 
         // pha
         0x48 => {
@@ -717,6 +735,19 @@ fn decode(cpu: &mut Cpu) {
         0x76 => rw!(ror, cpu, m, zeropage_x),
         0x6e => rw!(ror, cpu, m, absolute),
         0x7e => rw!(ror, cpu, m, absolute_x),
+
+        0xe9 => r!(sbc, cpu, m, immediate),
+        0xe5 => r!(sbc, cpu, m, zeropage),
+        0xf5 => r!(sbc, cpu, m, zeropage_x),
+        0xed => r!(sbc, cpu, m, absolute),
+        0xfd => r!(sbc, cpu, m, absolute_x_chk),
+        0xf9 => r!(sbc, cpu, m, absolute_y_chk),
+        0xe1 => r!(sbc, cpu, m, indirect_x),
+        0xf1 => r!(sbc, cpu, m, indirect_y_chk),
+
+        0x38 => cpu.set_flag(FLAG_CARRY),
+        0xf8 => cpu.set_flag(FLAG_DECIMAL),
+        0x78 => cpu.set_flag(FLAG_INTERRUPT),
 
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
