@@ -608,8 +608,8 @@ fn decode(cpu: &mut Cpu) {
         0xc5 => r!(cmp, cpu, m, zeropage),
         0xd5 => r!(cmp, cpu, m, zeropage_x),
         0xcd => r!(cmp, cpu, m, absolute),
-        0xdd => r!(cmp, cpu, m, absolute_x),
-        0xd9 => r!(cmp, cpu, m, absolute_y),
+        0xdd => r!(cmp, cpu, m, absolute_x_chk),
+        0xd9 => r!(cmp, cpu, m, absolute_y_chk),
         0xc1 => r!(cmp, cpu, m, indirect_x),
         0xd1 => r!(cmp, cpu, m, indirect_y),
 
@@ -633,8 +633,8 @@ fn decode(cpu: &mut Cpu) {
         0x45 => r!(eor, cpu, m, zeropage),
         0x55 => r!(eor, cpu, m, zeropage_x),
         0x40 => r!(eor, cpu, m, absolute),
-        0x50 => r!(eor, cpu, m, absolute_x),
-        0x59 => r!(eor, cpu, m, absolute_y),
+        0x50 => r!(eor, cpu, m, absolute_x_chk),
+        0x59 => r!(eor, cpu, m, absolute_y_chk),
         0x41 => r!(eor, cpu, m, indirect_x),
         0x51 => r!(eor, cpu, m, indirect_y),
 
@@ -658,6 +658,27 @@ fn decode(cpu: &mut Cpu) {
             let at = cpu.fetch_word();
             cpu.jsr(at);
         }
+
+        0xa9 => r!(lda, cpu, m, immediate),
+        0xa5 => r!(lda, cpu, m, zeropage),
+        0xb5 => r!(lda, cpu, m, zeropage_x),
+        0xad => r!(lda, cpu, m, absolute),
+        0xbd => r!(lda, cpu, m, absolute_x_chk),
+        0xb9 => r!(lda, cpu, m, absolute_y_chk),
+        0xa1 => r!(lda, cpu, m, indirect_x),
+        0xb1 => r!(lda, cpu, m, indirect_y),
+
+        0xa2 => r!(ldx, cpu, m, immediate),
+        0xa6 => r!(ldx, cpu, m, zeropage),
+        0xb6 => r!(ldx, cpu, m, zeropage_y),
+        0xae => r!(ldx, cpu, m, absolute),
+        0xbe => r!(ldx, cpu, m, absolute_y_chk),
+
+        0xa0 => r!(ldy, cpu, m, immediate),
+        0xa4 => r!(ldy, cpu, m, zeropage),
+        0xb4 => r!(ldy, cpu, m, zeropage_x),
+        0xac => r!(ldy, cpu, m, absolute),
+        0xbc => r!(ldy, cpu, m, absolute_x_chk),
 
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
