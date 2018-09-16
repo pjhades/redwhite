@@ -697,6 +697,27 @@ fn decode(cpu: &mut Cpu) {
         0x01 => r!(ora, cpu, m, indirect_x),
         0x11 => r!(ora, cpu, m, indirect_y),
 
+        // pha
+        0x48 => {
+            let value = cpu.a;
+            cpu.push(value);
+        }
+
+        // php
+        0x08 => {
+            let value = cpu.p;
+            cpu.push(value);
+        }
+
+        0x68 => cpu.a = cpu.pop(), // pla
+        0x28 => cpu.p = cpu.pop(), // plp
+
+        0x6a => rw!(ror, cpu, m, accumulator),
+        0x66 => rw!(ror, cpu, m, zeropage),
+        0x76 => rw!(ror, cpu, m, zeropage_x),
+        0x6e => rw!(ror, cpu, m, absolute),
+        0x7e => rw!(ror, cpu, m, absolute_x),
+
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
 }
