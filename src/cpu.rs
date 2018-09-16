@@ -680,6 +680,23 @@ fn decode(cpu: &mut Cpu) {
         0xac => r!(ldy, cpu, m, absolute),
         0xbc => r!(ldy, cpu, m, absolute_x_chk),
 
+        0x4a => rw!(lsr, cpu, m, accumulator),
+        0x46 => rw!(lsr, cpu, m, zeropage),
+        0x56 => rw!(lsr, cpu, m, zeropage_x),
+        0x4e => rw!(lsr, cpu, m, absolute),
+        0x5e => rw!(lsr, cpu, m, absolute_x),
+
+        0xea => (), // nop
+
+        0x09 => r!(ora, cpu, m, immediate),
+        0x05 => r!(ora, cpu, m, zeropage),
+        0x15 => r!(ora, cpu, m, zeropage_x),
+        0x0d => r!(ora, cpu, m, absolute),
+        0x1d => r!(ora, cpu, m, absolute_x_chk),
+        0x19 => r!(ora, cpu, m, absolute_y_chk),
+        0x01 => r!(ora, cpu, m, indirect_x),
+        0x11 => r!(ora, cpu, m, indirect_y),
+
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
 }
