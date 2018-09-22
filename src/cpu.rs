@@ -9,6 +9,46 @@ const FLAG_INTERRUPT: u8 = 0b0000_0100;
 const FLAG_ZERO:      u8 = 0b0000_0010;
 const FLAG_CARRY:     u8 = 0b0000_0001;
 
+const CYCLE_TABLE: [u8;256] = [
+    //       0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+    /* 0 */  7, 6, 0, 0, 0, 3, 5, 0, 3, 2, 2, 0, 0, 4, 6, 0,
+    /* 1 */  2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+    /* 2 */  6, 6, 0, 0, 3, 3, 5, 0, 4, 2, 2, 0, 4, 4, 6, 0,
+    /* 3 */  2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+    /* 4 */  6, 6, 0, 0, 0, 3, 5, 0, 3, 2, 2, 0, 3, 4, 6, 0,
+    /* 5 */  2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+    /* 6 */  6, 6, 0, 0, 0, 3, 5, 0, 4, 2, 2, 0, 5, 4, 6, 0,
+    /* 7 */  2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+    /* 8 */  0, 6, 0, 0, 3, 3, 3, 0, 2, 0, 2, 0, 4, 4, 4, 0,
+    /* 9 */  2, 6, 0, 0, 4, 4, 4, 0, 2, 5, 2, 0, 0, 5, 0, 0,
+    /* a */  2, 6, 2, 0, 3, 3, 3, 0, 2, 2, 2, 0, 4, 4, 4, 0,
+    /* b */  2, 5, 0, 0, 4, 4, 4, 0, 2, 4, 2, 0, 4, 4, 4, 0,
+    /* c */  2, 6, 0, 0, 3, 3, 5, 0, 2, 2, 2, 0, 4, 4, 6, 0,
+    /* d */  2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+    /* e */  2, 6, 0, 0, 3, 3, 5, 0, 2, 2, 2, 0, 4, 4, 6, 0,
+    /* f */  2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
+];
+
+const CROSSPAGE_CYCLE_TABLE: [u8;256] = [
+    //       0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+    /* 0 */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* 1 */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+    /* 2 */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* 3 */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+    /* 4 */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* 5 */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+    /* 6 */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* 7 */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+    /* 8 */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* 9 */  1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* a */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* b */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0,
+    /* c */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* d */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+    /* e */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* f */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
+];
+
 pub struct Cpu {
     a: u8,
     x: u8,
@@ -28,12 +68,6 @@ impl Access for Cpu {
     fn write(&mut self, at: Address, value: u8) {
         self.mem.write(at, value)
     }
-}
-
-// check if addresses `a1` and `a2` are on different pages
-#[inline(always)]
-fn does_x_page(a1: Address, a2: Address) -> bool {
-    (a1 >> 8) == (a2 >> 8)
 }
 
 struct AddressingMode {
@@ -97,29 +131,6 @@ impl AddressingMode {
         cpu.read(self.at)
     }
 
-    // XXX set up a table indexed by opcode for these cross-page check cycles
-    fn absolute_x_chk(&mut self, cpu: &mut Cpu) -> u8 {
-        let base = cpu.fetch_word();
-        self.at = base.wrapping_add(cpu.x as Address);
-
-        if does_x_page(base, self.at) {
-            cpu.cycle_count += 1;
-        }
-
-        cpu.read(self.at)
-    }
-
-    fn absolute_y_chk(&mut self, cpu: &mut Cpu) -> u8 {
-        let base = cpu.fetch_word();
-        self.at = base.wrapping_add(cpu.y as Address);
-
-        if does_x_page(base, self.at) {
-            cpu.cycle_count += 1;
-        }
-
-        cpu.read(self.at)
-    }
-
     // indexed indirect
     fn indirect_x(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch();
@@ -140,22 +151,6 @@ impl AddressingMode {
                    (cpu.read(hi) as Address) << 8;
 
         self.at = base.wrapping_add(cpu.y as Address);
-
-        cpu.read(self.at)
-    }
-
-    // XXX same
-    fn indirect_y_chk(&mut self, cpu: &mut Cpu) -> u8 {
-        let lo = cpu.fetch() as Address;
-        let hi = (lo as u8).wrapping_add(1) as Address;
-        let base = cpu.read(lo) as Address |
-                   (cpu.read(hi) as Address) << 8;
-
-        self.at = base.wrapping_add(cpu.y as Address);
-
-        if does_x_page(base, self.at) {
-            cpu.cycle_count += 1;
-        }
 
         cpu.read(self.at)
     }
@@ -234,9 +229,6 @@ impl Cpu {
     fn jump_on_condition(&mut self, at: Address, condition: bool) {
         if condition {
             self.cycle_count += 1;
-            if does_x_page(self.pc, at) {
-                self.cycle_count += 1;
-            }
             self.pc = at;
         }
     }
