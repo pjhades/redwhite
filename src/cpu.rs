@@ -749,6 +749,22 @@ fn decode(cpu: &mut Cpu) {
         0xf8 => cpu.set_flag(FLAG_DECIMAL),
         0x78 => cpu.set_flag(FLAG_INTERRUPT),
 
+        0x85 => w!(sta, cpu, m, zeropage),
+        0x95 => w!(sta, cpu, m, zeropage_x),
+        0x80 => w!(sta, cpu, m, absolute),
+        0x90 => w!(sta, cpu, m, absolute_x),
+        0x99 => w!(sta, cpu, m, absolute_y),
+        0x81 => w!(sta, cpu, m, indirect_x),
+        0x91 => w!(sta, cpu, m, indirect_y),
+
+        0x86 => w!(stx, cpu, m, zeropage),
+        0x96 => w!(stx, cpu, m, zeropage_y),
+        0x8e => w!(stx, cpu, m, absolute),
+
+        0x84 => w!(sty, cpu, m, zeropage),
+        0x94 => w!(sty, cpu, m, zeropage_x),
+        0x8c => w!(sty, cpu, m, absolute),
+
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
 }
