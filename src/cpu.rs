@@ -582,8 +582,8 @@ fn decode(cpu: &mut Cpu) {
         0x69 => r!(adc, cpu, m, immediate),
         0x65 => r!(adc, cpu, m, zeropage),
         0x75 => r!(adc, cpu, m, zeropage_x),
-        0x60 => r!(adc, cpu, m, absolute),
-        0x70 => r!(adc, cpu, m, absolute_x_chk),
+        0x6d => r!(adc, cpu, m, absolute),
+        0x7d => r!(adc, cpu, m, absolute_x_chk),
         0x79 => r!(adc, cpu, m, absolute_y_chk),
         0x61 => r!(adc, cpu, m, indirect_x),
         0x71 => r!(adc, cpu, m, indirect_y_chk),
@@ -615,10 +615,10 @@ fn decode(cpu: &mut Cpu) {
         0x24 => r!(bit, cpu, m, zeropage),
         0x2c => r!(bit, cpu, m, absolute),
 
-        0x18 => cpu.clear_flag(FLAG_CARRY),
-        0xd8 => cpu.clear_flag(FLAG_DECIMAL),
-        0x58 => cpu.clear_flag(FLAG_INTERRUPT),
-        0xb8 => cpu.clear_flag(FLAG_OVERFLOW),
+        0x18 => cpu.clear_flag(FLAG_CARRY),     // clc
+        0xd8 => cpu.clear_flag(FLAG_DECIMAL),   // cld
+        0x58 => cpu.clear_flag(FLAG_INTERRUPT), // cli
+        0xb8 => cpu.clear_flag(FLAG_OVERFLOW),  // clv
 
         0xc9 => r!(cmp, cpu, m, immediate),
         0xc5 => r!(cmp, cpu, m, zeropage),
@@ -648,8 +648,8 @@ fn decode(cpu: &mut Cpu) {
         0x49 => r!(eor, cpu, m, immediate),
         0x45 => r!(eor, cpu, m, zeropage),
         0x55 => r!(eor, cpu, m, zeropage_x),
-        0x40 => r!(eor, cpu, m, absolute),
-        0x50 => r!(eor, cpu, m, absolute_x_chk),
+        0x4d => r!(eor, cpu, m, absolute),
+        0x5d => r!(eor, cpu, m, absolute_x_chk),
         0x59 => r!(eor, cpu, m, absolute_y_chk),
         0x41 => r!(eor, cpu, m, indirect_x),
         0x51 => r!(eor, cpu, m, indirect_y_chk),
@@ -730,6 +730,12 @@ fn decode(cpu: &mut Cpu) {
         0x68 => cpu.a = cpu.pop(), // pla
         0x28 => cpu.p = cpu.pop(), // plp
 
+        0x2a => rw!(rol, cpu, m, accumulator),
+        0x26 => rw!(rol, cpu, m, zeropage),
+        0x36 => rw!(rol, cpu, m, zeropage_x),
+        0x2e => rw!(rol, cpu, m, absolute),
+        0x3e => rw!(rol, cpu, m, absolute_x),
+
         0x6a => rw!(ror, cpu, m, accumulator),
         0x66 => rw!(ror, cpu, m, zeropage),
         0x76 => rw!(ror, cpu, m, zeropage_x),
@@ -745,14 +751,14 @@ fn decode(cpu: &mut Cpu) {
         0xe1 => r!(sbc, cpu, m, indirect_x),
         0xf1 => r!(sbc, cpu, m, indirect_y_chk),
 
-        0x38 => cpu.set_flag(FLAG_CARRY),
-        0xf8 => cpu.set_flag(FLAG_DECIMAL),
-        0x78 => cpu.set_flag(FLAG_INTERRUPT),
+        0x38 => cpu.set_flag(FLAG_CARRY),     // sec
+        0xf8 => cpu.set_flag(FLAG_DECIMAL),   // sed
+        0x78 => cpu.set_flag(FLAG_INTERRUPT), // sei
 
         0x85 => w!(sta, cpu, m, zeropage),
         0x95 => w!(sta, cpu, m, zeropage_x),
-        0x80 => w!(sta, cpu, m, absolute),
-        0x90 => w!(sta, cpu, m, absolute_x),
+        0x8d => w!(sta, cpu, m, absolute),
+        0x9d => w!(sta, cpu, m, absolute_x),
         0x99 => w!(sta, cpu, m, absolute_y),
         0x81 => w!(sta, cpu, m, indirect_x),
         0x91 => w!(sta, cpu, m, indirect_y),
@@ -764,6 +770,13 @@ fn decode(cpu: &mut Cpu) {
         0x84 => w!(sty, cpu, m, zeropage),
         0x94 => w!(sty, cpu, m, zeropage_x),
         0x8c => w!(sty, cpu, m, absolute),
+
+        0xaa => cpu.tax(),
+        0xa8 => cpu.tay(),
+        0xba => cpu.tsx(),
+        0x8a => cpu.txa(),
+        0x9a => cpu.txs(),
+        0x98 => cpu.tya(),
 
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
