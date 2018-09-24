@@ -521,7 +521,7 @@ impl Cpu {
     }
 }
 
-macro_rules! r {
+macro_rules! rdonly {
     ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
         {
             let operand = $m.$mode($cpu);
@@ -530,7 +530,7 @@ macro_rules! r {
     }
 }
 
-macro_rules! rw {
+macro_rules! rdwr {
     ($inst:ident, $cpu:ident, $m:ident, accumulator) => {
         {
             let operand = $m.accumulator($cpu);
@@ -548,19 +548,10 @@ macro_rules! rw {
     }
 }
 
-macro_rules! w {
+macro_rules! other {
     ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
         {
             $m.$mode($cpu);
-            $cpu.$inst($m.at);
-        }
-    }
-}
-
-macro_rules! j {
-    ($inst:ident, $cpu:ident, $m:ident) => {
-        {
-            $m.relative($cpu);
             $cpu.$inst($m.at);
         }
     }
@@ -571,85 +562,85 @@ fn decode(cpu: &mut Cpu) {
     let mut m = AddressingMode::new();
 
     match opcode {
-        0x69 => r!(adc, cpu, m, immediate),
-        0x65 => r!(adc, cpu, m, zeropage),
-        0x75 => r!(adc, cpu, m, zeropage_x),
-        0x6d => r!(adc, cpu, m, absolute),
-        0x7d => r!(adc, cpu, m, absolute_x),
-        0x79 => r!(adc, cpu, m, absolute_y),
-        0x61 => r!(adc, cpu, m, indirect_x),
-        0x71 => r!(adc, cpu, m, indirect_y),
+        0x69 => rdonly!(adc, cpu, m, immediate),
+        0x65 => rdonly!(adc, cpu, m, zeropage),
+        0x75 => rdonly!(adc, cpu, m, zeropage_x),
+        0x6d => rdonly!(adc, cpu, m, absolute),
+        0x7d => rdonly!(adc, cpu, m, absolute_x),
+        0x79 => rdonly!(adc, cpu, m, absolute_y),
+        0x61 => rdonly!(adc, cpu, m, indirect_x),
+        0x71 => rdonly!(adc, cpu, m, indirect_y),
 
-        0x29 => r!(and, cpu, m, immediate),
-        0x25 => r!(and, cpu, m, zeropage),
-        0x35 => r!(and, cpu, m, zeropage_x),
-        0x2d => r!(and, cpu, m, absolute),
-        0x3d => r!(and, cpu, m, absolute_x),
-        0x39 => r!(and, cpu, m, absolute_y),
-        0x21 => r!(and, cpu, m, indirect_x),
-        0x31 => r!(and, cpu, m, indirect_y),
+        0x29 => rdonly!(and, cpu, m, immediate),
+        0x25 => rdonly!(and, cpu, m, zeropage),
+        0x35 => rdonly!(and, cpu, m, zeropage_x),
+        0x2d => rdonly!(and, cpu, m, absolute),
+        0x3d => rdonly!(and, cpu, m, absolute_x),
+        0x39 => rdonly!(and, cpu, m, absolute_y),
+        0x21 => rdonly!(and, cpu, m, indirect_x),
+        0x31 => rdonly!(and, cpu, m, indirect_y),
 
-        0x0a => rw!(asl, cpu, m, accumulator),
-        0x06 => rw!(asl, cpu, m, zeropage),
-        0x16 => rw!(asl, cpu, m, zeropage_x),
-        0x0e => rw!(asl, cpu, m, absolute),
-        0x1e => rw!(asl, cpu, m, absolute_x),
+        0x0a => rdwr!(asl, cpu, m, accumulator),
+        0x06 => rdwr!(asl, cpu, m, zeropage),
+        0x16 => rdwr!(asl, cpu, m, zeropage_x),
+        0x0e => rdwr!(asl, cpu, m, absolute),
+        0x1e => rdwr!(asl, cpu, m, absolute_x),
 
-        0x90 => j!(bcc, cpu, m),
-        0xb0 => j!(bcs, cpu, m),
-        0xf0 => j!(beq, cpu, m),
-        0x30 => j!(bmi, cpu, m),
-        0xd0 => j!(bne, cpu, m),
-        0x10 => j!(bpl, cpu, m),
-        0x50 => j!(bvc, cpu, m),
-        0x70 => j!(bvs, cpu, m),
+        0x90 => other!(bcc, cpu, m, relative),
+        0xb0 => other!(bcs, cpu, m, relative),
+        0xf0 => other!(beq, cpu, m, relative),
+        0x30 => other!(bmi, cpu, m, relative),
+        0xd0 => other!(bne, cpu, m, relative),
+        0x10 => other!(bpl, cpu, m, relative),
+        0x50 => other!(bvc, cpu, m, relative),
+        0x70 => other!(bvs, cpu, m, relative),
 
-        0x24 => r!(bit, cpu, m, zeropage),
-        0x2c => r!(bit, cpu, m, absolute),
+        0x24 => rdonly!(bit, cpu, m, zeropage),
+        0x2c => rdonly!(bit, cpu, m, absolute),
 
         0x18 => cpu.clear_flag(FLAG_CARRY),     // clc
         0xd8 => cpu.clear_flag(FLAG_DECIMAL),   // cld
         0x58 => cpu.clear_flag(FLAG_INTERRUPT), // cli
         0xb8 => cpu.clear_flag(FLAG_OVERFLOW),  // clv
 
-        0xc9 => r!(cmp, cpu, m, immediate),
-        0xc5 => r!(cmp, cpu, m, zeropage),
-        0xd5 => r!(cmp, cpu, m, zeropage_x),
-        0xcd => r!(cmp, cpu, m, absolute),
-        0xdd => r!(cmp, cpu, m, absolute_x),
-        0xd9 => r!(cmp, cpu, m, absolute_y),
-        0xc1 => r!(cmp, cpu, m, indirect_x),
-        0xd1 => r!(cmp, cpu, m, indirect_y),
+        0xc9 => rdonly!(cmp, cpu, m, immediate),
+        0xc5 => rdonly!(cmp, cpu, m, zeropage),
+        0xd5 => rdonly!(cmp, cpu, m, zeropage_x),
+        0xcd => rdonly!(cmp, cpu, m, absolute),
+        0xdd => rdonly!(cmp, cpu, m, absolute_x),
+        0xd9 => rdonly!(cmp, cpu, m, absolute_y),
+        0xc1 => rdonly!(cmp, cpu, m, indirect_x),
+        0xd1 => rdonly!(cmp, cpu, m, indirect_y),
 
-        0xe0 => r!(cpx, cpu, m, immediate),
-        0xe4 => r!(cpx, cpu, m, zeropage),
-        0xec => r!(cpx, cpu, m, absolute),
+        0xe0 => rdonly!(cpx, cpu, m, immediate),
+        0xe4 => rdonly!(cpx, cpu, m, zeropage),
+        0xec => rdonly!(cpx, cpu, m, absolute),
 
-        0xc0 => r!(cpy, cpu, m, immediate),
-        0xc4 => r!(cpy, cpu, m, zeropage),
-        0xcc => r!(cpy, cpu, m, absolute),
+        0xc0 => rdonly!(cpy, cpu, m, immediate),
+        0xc4 => rdonly!(cpy, cpu, m, zeropage),
+        0xcc => rdonly!(cpy, cpu, m, absolute),
 
-        0xc6 => rw!(dec, cpu, m, zeropage),
-        0xd6 => rw!(dec, cpu, m, zeropage_x),
-        0xce => rw!(dec, cpu, m, absolute),
-        0xde => rw!(dec, cpu, m, absolute_x),
+        0xc6 => rdwr!(dec, cpu, m, zeropage),
+        0xd6 => rdwr!(dec, cpu, m, zeropage_x),
+        0xce => rdwr!(dec, cpu, m, absolute),
+        0xde => rdwr!(dec, cpu, m, absolute_x),
 
         0xca => cpu.dex(),
         0x88 => cpu.dey(),
 
-        0x49 => r!(eor, cpu, m, immediate),
-        0x45 => r!(eor, cpu, m, zeropage),
-        0x55 => r!(eor, cpu, m, zeropage_x),
-        0x4d => r!(eor, cpu, m, absolute),
-        0x5d => r!(eor, cpu, m, absolute_x),
-        0x59 => r!(eor, cpu, m, absolute_y),
-        0x41 => r!(eor, cpu, m, indirect_x),
-        0x51 => r!(eor, cpu, m, indirect_y),
+        0x49 => rdonly!(eor, cpu, m, immediate),
+        0x45 => rdonly!(eor, cpu, m, zeropage),
+        0x55 => rdonly!(eor, cpu, m, zeropage_x),
+        0x4d => rdonly!(eor, cpu, m, absolute),
+        0x5d => rdonly!(eor, cpu, m, absolute_x),
+        0x59 => rdonly!(eor, cpu, m, absolute_y),
+        0x41 => rdonly!(eor, cpu, m, indirect_x),
+        0x51 => rdonly!(eor, cpu, m, indirect_y),
 
-        0xe6 => rw!(inc, cpu, m, zeropage),
-        0xf6 => rw!(inc, cpu, m, zeropage_x),
-        0xee => rw!(inc, cpu, m, absolute),
-        0xfe => rw!(inc, cpu, m, absolute_x),
+        0xe6 => rdwr!(inc, cpu, m, zeropage),
+        0xf6 => rdwr!(inc, cpu, m, zeropage_x),
+        0xee => rdwr!(inc, cpu, m, absolute),
+        0xfe => rdwr!(inc, cpu, m, absolute_x),
 
         0xe8 => cpu.inx(),
         0xc8 => cpu.iny(),
@@ -669,43 +660,43 @@ fn decode(cpu: &mut Cpu) {
 
         0x60 => cpu.rts(),
 
-        0xa9 => r!(lda, cpu, m, immediate),
-        0xa5 => r!(lda, cpu, m, zeropage),
-        0xb5 => r!(lda, cpu, m, zeropage_x),
-        0xad => r!(lda, cpu, m, absolute),
-        0xbd => r!(lda, cpu, m, absolute_x),
-        0xb9 => r!(lda, cpu, m, absolute_y),
-        0xa1 => r!(lda, cpu, m, indirect_x),
-        0xb1 => r!(lda, cpu, m, indirect_y),
+        0xa9 => rdonly!(lda, cpu, m, immediate),
+        0xa5 => rdonly!(lda, cpu, m, zeropage),
+        0xb5 => rdonly!(lda, cpu, m, zeropage_x),
+        0xad => rdonly!(lda, cpu, m, absolute),
+        0xbd => rdonly!(lda, cpu, m, absolute_x),
+        0xb9 => rdonly!(lda, cpu, m, absolute_y),
+        0xa1 => rdonly!(lda, cpu, m, indirect_x),
+        0xb1 => rdonly!(lda, cpu, m, indirect_y),
 
-        0xa2 => r!(ldx, cpu, m, immediate),
-        0xa6 => r!(ldx, cpu, m, zeropage),
-        0xb6 => r!(ldx, cpu, m, zeropage_y),
-        0xae => r!(ldx, cpu, m, absolute),
-        0xbe => r!(ldx, cpu, m, absolute_y),
+        0xa2 => rdonly!(ldx, cpu, m, immediate),
+        0xa6 => rdonly!(ldx, cpu, m, zeropage),
+        0xb6 => rdonly!(ldx, cpu, m, zeropage_y),
+        0xae => rdonly!(ldx, cpu, m, absolute),
+        0xbe => rdonly!(ldx, cpu, m, absolute_y),
 
-        0xa0 => r!(ldy, cpu, m, immediate),
-        0xa4 => r!(ldy, cpu, m, zeropage),
-        0xb4 => r!(ldy, cpu, m, zeropage_x),
-        0xac => r!(ldy, cpu, m, absolute),
-        0xbc => r!(ldy, cpu, m, absolute_x),
+        0xa0 => rdonly!(ldy, cpu, m, immediate),
+        0xa4 => rdonly!(ldy, cpu, m, zeropage),
+        0xb4 => rdonly!(ldy, cpu, m, zeropage_x),
+        0xac => rdonly!(ldy, cpu, m, absolute),
+        0xbc => rdonly!(ldy, cpu, m, absolute_x),
 
-        0x4a => rw!(lsr, cpu, m, accumulator),
-        0x46 => rw!(lsr, cpu, m, zeropage),
-        0x56 => rw!(lsr, cpu, m, zeropage_x),
-        0x4e => rw!(lsr, cpu, m, absolute),
-        0x5e => rw!(lsr, cpu, m, absolute_x),
+        0x4a => rdwr!(lsr, cpu, m, accumulator),
+        0x46 => rdwr!(lsr, cpu, m, zeropage),
+        0x56 => rdwr!(lsr, cpu, m, zeropage_x),
+        0x4e => rdwr!(lsr, cpu, m, absolute),
+        0x5e => rdwr!(lsr, cpu, m, absolute_x),
 
         0xea => (), // nop
 
-        0x09 => r!(ora, cpu, m, immediate),
-        0x05 => r!(ora, cpu, m, zeropage),
-        0x15 => r!(ora, cpu, m, zeropage_x),
-        0x0d => r!(ora, cpu, m, absolute),
-        0x1d => r!(ora, cpu, m, absolute_x),
-        0x19 => r!(ora, cpu, m, absolute_y),
-        0x01 => r!(ora, cpu, m, indirect_x),
-        0x11 => r!(ora, cpu, m, indirect_y),
+        0x09 => rdonly!(ora, cpu, m, immediate),
+        0x05 => rdonly!(ora, cpu, m, zeropage),
+        0x15 => rdonly!(ora, cpu, m, zeropage_x),
+        0x0d => rdonly!(ora, cpu, m, absolute),
+        0x1d => rdonly!(ora, cpu, m, absolute_x),
+        0x19 => rdonly!(ora, cpu, m, absolute_y),
+        0x01 => rdonly!(ora, cpu, m, indirect_x),
+        0x11 => rdonly!(ora, cpu, m, indirect_y),
 
         // pha
         0x48 => {
@@ -722,46 +713,46 @@ fn decode(cpu: &mut Cpu) {
         0x68 => cpu.a = cpu.pop(), // pla
         0x28 => cpu.p = cpu.pop(), // plp
 
-        0x2a => rw!(rol, cpu, m, accumulator),
-        0x26 => rw!(rol, cpu, m, zeropage),
-        0x36 => rw!(rol, cpu, m, zeropage_x),
-        0x2e => rw!(rol, cpu, m, absolute),
-        0x3e => rw!(rol, cpu, m, absolute_x),
+        0x2a => rdwr!(rol, cpu, m, accumulator),
+        0x26 => rdwr!(rol, cpu, m, zeropage),
+        0x36 => rdwr!(rol, cpu, m, zeropage_x),
+        0x2e => rdwr!(rol, cpu, m, absolute),
+        0x3e => rdwr!(rol, cpu, m, absolute_x),
 
-        0x6a => rw!(ror, cpu, m, accumulator),
-        0x66 => rw!(ror, cpu, m, zeropage),
-        0x76 => rw!(ror, cpu, m, zeropage_x),
-        0x6e => rw!(ror, cpu, m, absolute),
-        0x7e => rw!(ror, cpu, m, absolute_x),
+        0x6a => rdwr!(ror, cpu, m, accumulator),
+        0x66 => rdwr!(ror, cpu, m, zeropage),
+        0x76 => rdwr!(ror, cpu, m, zeropage_x),
+        0x6e => rdwr!(ror, cpu, m, absolute),
+        0x7e => rdwr!(ror, cpu, m, absolute_x),
 
-        0xe9 => r!(sbc, cpu, m, immediate),
-        0xe5 => r!(sbc, cpu, m, zeropage),
-        0xf5 => r!(sbc, cpu, m, zeropage_x),
-        0xed => r!(sbc, cpu, m, absolute),
-        0xfd => r!(sbc, cpu, m, absolute_x),
-        0xf9 => r!(sbc, cpu, m, absolute_y),
-        0xe1 => r!(sbc, cpu, m, indirect_x),
-        0xf1 => r!(sbc, cpu, m, indirect_y),
+        0xe9 => rdonly!(sbc, cpu, m, immediate),
+        0xe5 => rdonly!(sbc, cpu, m, zeropage),
+        0xf5 => rdonly!(sbc, cpu, m, zeropage_x),
+        0xed => rdonly!(sbc, cpu, m, absolute),
+        0xfd => rdonly!(sbc, cpu, m, absolute_x),
+        0xf9 => rdonly!(sbc, cpu, m, absolute_y),
+        0xe1 => rdonly!(sbc, cpu, m, indirect_x),
+        0xf1 => rdonly!(sbc, cpu, m, indirect_y),
 
         0x38 => cpu.set_flag(FLAG_CARRY),     // sec
         0xf8 => cpu.set_flag(FLAG_DECIMAL),   // sed
         0x78 => cpu.set_flag(FLAG_INTERRUPT), // sei
 
-        0x85 => w!(sta, cpu, m, zeropage),
-        0x95 => w!(sta, cpu, m, zeropage_x),
-        0x8d => w!(sta, cpu, m, absolute),
-        0x9d => w!(sta, cpu, m, absolute_x),
-        0x99 => w!(sta, cpu, m, absolute_y),
-        0x81 => w!(sta, cpu, m, indirect_x),
-        0x91 => w!(sta, cpu, m, indirect_y),
+        0x85 => other!(sta, cpu, m, zeropage),
+        0x95 => other!(sta, cpu, m, zeropage_x),
+        0x8d => other!(sta, cpu, m, absolute),
+        0x9d => other!(sta, cpu, m, absolute_x),
+        0x99 => other!(sta, cpu, m, absolute_y),
+        0x81 => other!(sta, cpu, m, indirect_x),
+        0x91 => other!(sta, cpu, m, indirect_y),
 
-        0x86 => w!(stx, cpu, m, zeropage),
-        0x96 => w!(stx, cpu, m, zeropage_y),
-        0x8e => w!(stx, cpu, m, absolute),
+        0x86 => other!(stx, cpu, m, zeropage),
+        0x96 => other!(stx, cpu, m, zeropage_y),
+        0x8e => other!(stx, cpu, m, absolute),
 
-        0x84 => w!(sty, cpu, m, zeropage),
-        0x94 => w!(sty, cpu, m, zeropage_x),
-        0x8c => w!(sty, cpu, m, absolute),
+        0x84 => other!(sty, cpu, m, zeropage),
+        0x94 => other!(sty, cpu, m, zeropage_x),
+        0x8c => other!(sty, cpu, m, absolute),
 
         0xaa => cpu.tax(),
         0xa8 => cpu.tay(),
