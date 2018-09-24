@@ -763,4 +763,7 @@ fn decode(cpu: &mut Cpu) {
 
         _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
     }
+
+    cpu.cycle_count += CYCLE_TABLE[opcode as usize] as usize;
+    cpu.cycle_count += CROSSPAGE_CYCLE_TABLE[opcode as usize] as usize;
 }
