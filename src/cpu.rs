@@ -453,16 +453,6 @@ impl Cpu {
         self.a = result;
     }
 
-    #[inline(always)]
-    fn sec(&mut self) {
-        self.set_flag(FLAG_CARRY);
-    }
-
-    #[inline(always)]
-    fn sei(&mut self) {
-        self.set_flag(FLAG_INTERRUPT);
-    }
-
     fn sta(&mut self, at: Address) {
         let value = self.a;
         self.write(at, value);
