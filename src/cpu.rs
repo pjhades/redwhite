@@ -137,8 +137,7 @@ impl AddressingMode {
         let lo = base.wrapping_add(cpu.x) as Address;
         let hi = (lo as u8).wrapping_add(1) as Address;
 
-        self.at = cpu.read(lo) as Address |
-                  (cpu.read(hi) as Address) << 8;
+        self.at = cpu.read(lo) as Address | (cpu.read(hi) as Address) << 8;
 
         cpu.read(self.at)
     }
@@ -147,8 +146,7 @@ impl AddressingMode {
     fn indirect_y(&mut self, cpu: &mut Cpu) -> u8 {
         let lo = cpu.fetch() as Address;
         let hi = (lo as u8).wrapping_add(1) as Address;
-        let base = cpu.read(lo) as Address |
-                   (cpu.read(hi) as Address) << 8;
+        let base = cpu.read(lo) as Address | (cpu.read(hi) as Address) << 8;
 
         self.at = base.wrapping_add(cpu.y as Address);
 
@@ -429,14 +427,12 @@ impl Cpu {
 
     fn rti(&mut self) {
         self.p = self.pop();
-        let at = self.pop() as Address |
-                 (self.pop() as Address) << 8;
+        let at = self.pop() as Address | (self.pop() as Address) << 8;
         self.pc = at;
     }
 
     fn rts(&mut self) {
-        let at = self.pop() as Address |
-                 (self.pop() as Address) << 8;
+        let at = self.pop() as Address | (self.pop() as Address) << 8;
         let at = at.saturating_add(1);
         self.pc = at;
     }
@@ -639,8 +635,7 @@ fn decode(cpu: &mut Cpu) {
         0x4c => cpu.pc = cpu.fetch_word(),
         0x6c => {
             let at = cpu.fetch_word();
-            cpu.pc = cpu.read(at) as Address |
-                     (cpu.read(at.wrapping_add(1)) as Address) << 8;
+            cpu.pc = cpu.read(at) as Address | (cpu.read(at.wrapping_add(1)) as Address) << 8;
         }
 
         0x20 => {
