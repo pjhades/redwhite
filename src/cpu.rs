@@ -58,6 +58,8 @@ pub struct Cpu {
     p: u8,
     cycle_count: usize,
     mem: Memory,
+    irq: bool,
+    nmi: bool,
 }
 
 impl Access for Cpu {
@@ -170,6 +172,8 @@ impl Cpu {
             p: 0,
             cycle_count: 0,
             mem: Memory::new(),
+            nmi: false,
+            irq: false,
         }
     }
 
@@ -219,15 +223,43 @@ impl Cpu {
         self.sp = self.sp.wrapping_sub(1);
     }
 
+    fn push_word(&mut self, value: u16) {
+        self.push(((value & 0xff00) >> 8) as u8);
+        self.push(value as u8);
+    }
+
     fn pop(&mut self) -> u8 {
         self.sp = self.sp.wrapping_add(1);
         self.read(self.sp as Address + 0x0100)
+    }
+
+    fn pop_word(&mut self) -> u16 {
+        let value = self.pop() as u16;
+        let value = value | (self.pop() as u16) << 8;
+        value
     }
 
     fn jump_on_condition(&mut self, at: Address, condition: bool) {
         if condition {
             self.cycle_count += 1;
             self.pc = at;
+        }
+    }
+
+    fn poll_int(&mut self) {
+        if self.nmi || (self.irq && !self.is_flag_set(FLAG_INTERRUPT)) {
+            let value = self.p;
+            self.push(value);
+            let value = self.pc;
+            self.push_word(value);
+            if self.nmi {
+                self.pc = 0xfffa;
+                self.nmi = false;
+            }
+            else {
+                self.pc = 0xfffe;
+                self.irq = false;
+            }
         }
     }
 
@@ -370,8 +402,7 @@ impl Cpu {
 
     fn jsr(&mut self, at: Address) {
         let ret = self.pc.saturating_sub(1);
-        self.push(((ret & 0xff00) >> 8) as u8);
-        self.push(ret as u8);
+        self.push_word(ret);
         self.pc = at;
     }
 
@@ -427,12 +458,11 @@ impl Cpu {
 
     fn rti(&mut self) {
         self.p = self.pop();
-        let at = self.pop() as Address | (self.pop() as Address) << 8;
-        self.pc = at;
+        self.pc = self.pop_word() as Address;
     }
 
     fn rts(&mut self) {
-        let at = self.pop() as Address | (self.pop() as Address) << 8;
+        let at = self.pop_word() as Address;
         let at = at.saturating_add(1);
         self.pc = at;
     }
