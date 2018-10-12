@@ -8,3 +8,4 @@ name = "redwhite"
 path = "src/lib.rs"
 
 [dependencies]
+sdl2 = "^0.31.0"
