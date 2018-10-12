@@ -19,8 +19,8 @@ pub struct Header {
 #[derive(Debug)]
 pub struct Ines {
     header: Header,
-    prgrom: Vec<u8>,
-    chrrom: Vec<u8>,
+    pub prgrom: Vec<u8>,
+    pub chrrom: Vec<u8>,
 }
 
 impl Ines {
