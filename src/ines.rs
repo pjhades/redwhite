@@ -41,6 +41,10 @@ impl Ines {
             flag9:    bytes[9],
             flag10:   bytes[10],
         };
+        // skip 5 zero bytes
+        let mut bytes = [0u8;5];
+        file.read_exact(&mut bytes)?;
+
         let mut prgrom = Vec::new();
         let mut chrrom = Vec::new();
         prgrom.resize(header.n_prgrom as usize * 16 * 1024, 0);
