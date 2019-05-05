@@ -273,12 +273,14 @@ impl Cpu {
         self.set_zero_negative(result);
         let a = self.a;
         self.set_flag_if(FLAG_OVERFLOW, (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0);
+        // XXX merge with accumulator
         self.a = result;
     }
 
     fn and(&mut self, operand: u8) {
         let result = operand & self.a;
         self.set_zero_negative(result);
+        // XXX merge with accumulator
         self.a = result;
     }
 
@@ -379,6 +381,7 @@ impl Cpu {
     fn eor(&mut self, operand: u8) {
         let result = self.a ^ operand;
         self.set_zero_negative(result);
+        // XXX merge with accumulator
         self.a = result;
     }
 
@@ -408,6 +411,7 @@ impl Cpu {
 
     fn lda(&mut self, operand: u8) {
         self.set_zero_negative(operand);
+        // XXX merge with accumulator
         self.a = operand;
     }
 
@@ -431,6 +435,7 @@ impl Cpu {
     fn ora(&mut self, operand: u8) {
         let result = operand | self.a;
         self.set_zero_negative(result);
+        // XXX merge with accumulator
         self.a = result;
     }
 
@@ -476,6 +481,7 @@ impl Cpu {
         self.set_zero_negative(result);
         let a = self.a;
         self.set_flag_if(FLAG_OVERFLOW, (a ^ result) & 0x80 != 0 && (a ^ operand) & 0x80 != 0);
+        // XXX merge with accumulator
         self.a = result;
     }
 
