@@ -100,44 +100,44 @@ impl AddressingMode {
 
     #[inline(always)]
     fn immediate(&mut self, cpu: &mut Cpu) -> u8 {
-        cpu.fetch()
+        cpu.get_operand()
     }
 
     fn zeropage(&mut self, cpu: &mut Cpu) -> u8 {
-        self.addr = cpu.fetch() as u16;
+        self.addr = cpu.get_operand() as u16;
         cpu.read(self.addr)
     }
 
     fn zeropage_x(&mut self, cpu: &mut Cpu) -> u8 {
-        self.addr = (cpu.fetch() as u16 + cpu.x as u16) & 0x00ff;
+        self.addr = (cpu.get_operand() as u16 + cpu.x as u16) & 0x00ff;
         cpu.read(self.addr)
     }
 
     fn zeropage_y(&mut self, cpu: &mut Cpu) -> u8 {
-        self.addr = (cpu.fetch() as u16 + cpu.y as u16) & 0x00ff;
+        self.addr = (cpu.get_operand() as u16 + cpu.y as u16) & 0x00ff;
         cpu.read(self.addr)
     }
 
     fn absolute(&mut self, cpu: &mut Cpu) -> u8 {
-        self.addr = cpu.fetch_word();
+        self.addr = cpu.get_operand_word();
         cpu.read(self.addr)
     }
 
     fn absolute_x(&mut self, cpu: &mut Cpu) -> u8 {
-        let base = cpu.fetch_word();
+        let base = cpu.get_operand_word();
         self.addr = base.wrapping_add(cpu.x as u16);
         cpu.read(self.addr)
     }
 
     fn absolute_y(&mut self, cpu: &mut Cpu) -> u8 {
-        let base = cpu.fetch_word();
+        let base = cpu.get_operand_word();
         self.addr = base.wrapping_add(cpu.y as u16);
         cpu.read(self.addr)
     }
 
     // indexed indirect
     fn indirect_x(&mut self, cpu: &mut Cpu) -> u8 {
-        let base = cpu.fetch();
+        let base = cpu.get_operand();
         let lo = base.wrapping_add(cpu.x) as u16;
         let hi = (lo as u8).wrapping_add(1) as u16;
 
@@ -148,7 +148,7 @@ impl AddressingMode {
 
     // indirect indexed
     fn indirect_y(&mut self, cpu: &mut Cpu) -> u8 {
-        let lo = cpu.fetch() as u16;
+        let lo = cpu.get_operand() as u16;
         let hi = (lo as u8).wrapping_add(1) as u16;
         let base = cpu.read(lo) as u16 | (cpu.read(hi) as u16) << 8;
 
@@ -158,7 +158,7 @@ impl AddressingMode {
     }
 
     fn relative(&mut self, cpu: &mut Cpu) {
-        let offset = cpu.fetch() as i8 as i16;
+        let offset = cpu.get_operand() as i8 as i16;
         self.addr = (cpu.pc as i16).wrapping_add(offset) as u16;
     }
 }
@@ -225,16 +225,14 @@ impl Cpu {
         }
     }
 
-    fn fetch(&mut self) -> u8 {
-        let value = self.read(self.pc);
-        self.pc += 1;
-        value
+    fn get_operand(&self) -> u8 {
+        let addr = self.pc.wrapping_add(1);
+        self.read(addr)
     }
 
-    fn fetch_word(&mut self) -> u16 {
-        let value = self.read_word(self.pc);
-        self.pc += 2;
-        value
+    fn get_operand_word(&self) -> u16 {
+        let addr = self.pc.wrapping_add(1);
+        self.read_word(addr)
     }
 
     fn push(&mut self, value: u8) {
@@ -609,7 +607,7 @@ macro_rules! other {
 }
 
 fn decode(cpu: &mut Cpu) {
-    let opcode = cpu.fetch();
+    let opcode = cpu.get_operand();
     let mut m = AddressingMode::new();
 
     match opcode {
@@ -697,14 +695,14 @@ fn decode(cpu: &mut Cpu) {
         0xc8 => cpu.iny(),
 
         // jmp
-        0x4c => cpu.pc = cpu.fetch_word(),
+        0x4c => cpu.pc = cpu.get_operand_word(),
         0x6c => {
-            let addr = cpu.fetch_word();
+            let addr = cpu.get_operand_word();
             cpu.pc = cpu.read(addr) as u16 | (cpu.read(addr.wrapping_add(1)) as u16) << 8;
         }
 
         0x20 => {
-            let addr = cpu.fetch_word();
+            let addr = cpu.get_operand_word();
             cpu.jsr(addr);
         }
 
