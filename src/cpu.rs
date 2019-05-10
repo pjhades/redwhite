@@ -62,8 +62,6 @@ pub struct Cpu {
     // misc
     cycle_count: usize,
     mem: Memory,
-    //irq: bool,
-    //nmi: bool,
 }
 
 impl Access for Cpu {
@@ -186,8 +184,6 @@ impl Cpu {
 
             cycle_count: 0,
             mem: Memory::new(),
-            //nmi: false,
-            //irq: false,
         };
 
         // Set power-up state
@@ -269,23 +265,6 @@ impl Cpu {
             self.pc = at;
         }
     }
-
-    //fn poll_int(&mut self) {
-    //    if self.nmi || (self.irq && !self.is_flag_set(FLAG_INTERRUPT)) {
-    //        let value = self.p;
-    //        self.push(value);
-    //        let value = self.pc;
-    //        self.push_word(value);
-    //        if self.nmi {
-    //            self.pc = 0xfffa;
-    //            self.nmi = false;
-    //        }
-    //        else {
-    //            self.pc = 0xfffe;
-    //            self.irq = false;
-    //        }
-    //    }
-    //}
 
     fn adc(&mut self, operand: u8) {
         let mut result = operand as u16 + self.a as u16;
