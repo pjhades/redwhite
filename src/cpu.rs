@@ -65,27 +65,27 @@ pub struct Cpu {
 }
 
 impl Access for Cpu {
-    fn read(&self, at: u16) -> u8 {
-        self.mem.read(at)
+    fn read(&self, addr: u16) -> u8 {
+        self.mem.read(addr)
     }
 
-    fn write(&mut self, at: u16, value: u8) {
-        self.mem.write(at, value)
+    fn write(&mut self, addr: u16, value: u8) {
+        self.mem.write(addr, value)
     }
 }
 
 struct AddressingMode {
-    at: u16,
+    addr: u16,
 }
 
 impl AddressingMode {
     fn new() -> Self {
-        AddressingMode { at: 0 }
+        AddressingMode { addr: 0 }
     }
 
     #[inline(always)]
     fn wb(&mut self, cpu: &mut Cpu, value: u8) {
-        cpu.write(self.at, value);
+        cpu.write(self.addr, value);
     }
 
     #[inline(always)]
@@ -104,35 +104,35 @@ impl AddressingMode {
     }
 
     fn zeropage(&mut self, cpu: &mut Cpu) -> u8 {
-        self.at = cpu.fetch() as u16;
-        cpu.read(self.at)
+        self.addr = cpu.fetch() as u16;
+        cpu.read(self.addr)
     }
 
     fn zeropage_x(&mut self, cpu: &mut Cpu) -> u8 {
-        self.at = (cpu.fetch() as u16 + cpu.x as u16) & 0x00ff;
-        cpu.read(self.at)
+        self.addr = (cpu.fetch() as u16 + cpu.x as u16) & 0x00ff;
+        cpu.read(self.addr)
     }
 
     fn zeropage_y(&mut self, cpu: &mut Cpu) -> u8 {
-        self.at = (cpu.fetch() as u16 + cpu.y as u16) & 0x00ff;
-        cpu.read(self.at)
+        self.addr = (cpu.fetch() as u16 + cpu.y as u16) & 0x00ff;
+        cpu.read(self.addr)
     }
 
     fn absolute(&mut self, cpu: &mut Cpu) -> u8 {
-        self.at = cpu.fetch_word();
-        cpu.read(self.at)
+        self.addr = cpu.fetch_word();
+        cpu.read(self.addr)
     }
 
     fn absolute_x(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch_word();
-        self.at = base.wrapping_add(cpu.x as u16);
-        cpu.read(self.at)
+        self.addr = base.wrapping_add(cpu.x as u16);
+        cpu.read(self.addr)
     }
 
     fn absolute_y(&mut self, cpu: &mut Cpu) -> u8 {
         let base = cpu.fetch_word();
-        self.at = base.wrapping_add(cpu.y as u16);
-        cpu.read(self.at)
+        self.addr = base.wrapping_add(cpu.y as u16);
+        cpu.read(self.addr)
     }
 
     // indexed indirect
@@ -141,9 +141,9 @@ impl AddressingMode {
         let lo = base.wrapping_add(cpu.x) as u16;
         let hi = (lo as u8).wrapping_add(1) as u16;
 
-        self.at = cpu.read(lo) as u16 | (cpu.read(hi) as u16) << 8;
+        self.addr = cpu.read(lo) as u16 | (cpu.read(hi) as u16) << 8;
 
-        cpu.read(self.at)
+        cpu.read(self.addr)
     }
 
     // indirect indexed
@@ -152,14 +152,14 @@ impl AddressingMode {
         let hi = (lo as u8).wrapping_add(1) as u16;
         let base = cpu.read(lo) as u16 | (cpu.read(hi) as u16) << 8;
 
-        self.at = base.wrapping_add(cpu.y as u16);
+        self.addr = base.wrapping_add(cpu.y as u16);
 
-        cpu.read(self.at)
+        cpu.read(self.addr)
     }
 
     fn relative(&mut self, cpu: &mut Cpu) {
         let offset = cpu.fetch() as i8 as i16;
-        self.at = (cpu.pc as i16).wrapping_add(offset) as u16;
+        self.addr = (cpu.pc as i16).wrapping_add(offset) as u16;
     }
 }
 
@@ -238,8 +238,8 @@ impl Cpu {
     }
 
     fn push(&mut self, value: u8) {
-        let at = self.sp as u16 + 0x0100;
-        self.write(at, value);
+        let addr = self.sp as u16 + 0x0100;
+        self.write(addr, value);
         self.sp = self.sp.wrapping_sub(1);
     }
 
@@ -259,10 +259,10 @@ impl Cpu {
         value
     }
 
-    fn jump_on_condition(&mut self, at: u16, condition: bool) {
+    fn jump_on_condition(&mut self, addr: u16, condition: bool) {
         if condition {
             self.cycle_count += 1;
-            self.pc = at;
+            self.pc = addr;
         }
     }
 
@@ -300,44 +300,44 @@ impl Cpu {
         result
     }
 
-    fn bcc(&mut self, at: u16) {
+    fn bcc(&mut self, addr: u16) {
         let cond = !self.carry;
-        self.jump_on_condition(at, cond);
+        self.jump_on_condition(addr, cond);
     }
 
-    fn bcs(&mut self, at: u16) {
+    fn bcs(&mut self, addr: u16) {
         let cond = self.carry;
-        self.jump_on_condition(at, cond);
+        self.jump_on_condition(addr, cond);
     }
 
-    fn beq(&mut self, at: u16) {
+    fn beq(&mut self, addr: u16) {
         let cond = self.zero;
-        self.jump_on_condition(at, cond);
+        self.jump_on_condition(addr, cond);
     }
 
-    fn bmi(&mut self, at: u16) {
+    fn bmi(&mut self, addr: u16) {
         let cond = self.negative;
-        self.jump_on_condition(at, cond);
+        self.jump_on_condition(addr, cond);
     }
 
-    fn bne(&mut self, at: u16) {
+    fn bne(&mut self, addr: u16) {
         let cond = !self.zero;
-        self.jump_on_condition(at, cond);
+        self.jump_on_condition(addr, cond);
     }
 
-    fn bpl(&mut self, at: u16) {
+    fn bpl(&mut self, addr: u16) {
         let cond = !self.negative;
-        self.jump_on_condition(at, cond);
+        self.jump_on_condition(addr, cond);
     }
 
-    fn bvc(&mut self, at: u16) {
+    fn bvc(&mut self, addr: u16) {
         let cond = !self.overflow;
-        self.jump_on_condition(at, cond);
+        self.jump_on_condition(addr, cond);
     }
 
-    fn bvs(&mut self, at: u16) {
+    fn bvs(&mut self, addr: u16) {
         let cond = self.overflow;
-        self.jump_on_condition(at, cond);
+        self.jump_on_condition(addr, cond);
     }
 
     fn bit(&mut self, operand: u8) {
@@ -422,10 +422,10 @@ impl Cpu {
         self.y = result;
     }
 
-    fn jsr(&mut self, at: u16) {
+    fn jsr(&mut self, addr: u16) {
         let ret = self.pc.saturating_sub(1);
         self.push_word(ret);
-        self.pc = at;
+        self.pc = addr;
     }
 
     fn lda(&mut self, operand: u8) {
@@ -492,9 +492,9 @@ impl Cpu {
     }
 
     fn rts(&mut self) {
-        let at = self.pop_word() as u16;
-        let at = at.saturating_add(1);
-        self.pc = at;
+        let addr = self.pop_word() as u16;
+        let addr = addr.saturating_add(1);
+        self.pc = addr;
     }
 
     fn sbc(&mut self, operand: u8) {
@@ -514,19 +514,19 @@ impl Cpu {
         self.a = result;
     }
 
-    fn sta(&mut self, at: u16) {
+    fn sta(&mut self, addr: u16) {
         let value = self.a;
-        self.write(at, value);
+        self.write(addr, value);
     }
 
-    fn stx(&mut self, at: u16) {
+    fn stx(&mut self, addr: u16) {
         let value = self.x;
-        self.write(at, value);
+        self.write(addr, value);
     }
 
-    fn sty(&mut self, at: u16) {
+    fn sty(&mut self, addr: u16) {
         let value = self.y;
-        self.write(at, value);
+        self.write(addr, value);
     }
 
     fn tax(&mut self) {
@@ -603,7 +603,7 @@ macro_rules! other {
     ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
         {
             $m.$mode($cpu);
-            $cpu.$inst($m.at);
+            $cpu.$inst($m.addr);
         }
     }
 }
@@ -699,13 +699,13 @@ fn decode(cpu: &mut Cpu) {
         // jmp
         0x4c => cpu.pc = cpu.fetch_word(),
         0x6c => {
-            let at = cpu.fetch_word();
-            cpu.pc = cpu.read(at) as u16 | (cpu.read(at.wrapping_add(1)) as u16) << 8;
+            let addr = cpu.fetch_word();
+            cpu.pc = cpu.read(addr) as u16 | (cpu.read(addr.wrapping_add(1)) as u16) << 8;
         }
 
         0x20 => {
-            let at = cpu.fetch_word();
-            cpu.jsr(at);
+            let addr = cpu.fetch_word();
+            cpu.jsr(addr);
         }
 
         0x60 => cpu.rts(),
@@ -811,7 +811,7 @@ fn decode(cpu: &mut Cpu) {
         0x9a => cpu.txs(),
         0x98 => cpu.tya(),
 
-        _ => panic!("unknown opcode {} at pc={:x}", opcode, cpu.pc - 1)
+        _ => panic!("unknown opcode {} addr pc={:x}", opcode, cpu.pc - 1)
     }
 
     cpu.cycle_count += CYCLE_TABLE[opcode as usize] as usize;
