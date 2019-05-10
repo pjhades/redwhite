@@ -1,14 +1,5 @@
 use mem::{Memory, Access};
 
-const FLAG_NEGATIVE:  u8 = 0b1000_0000;
-const FLAG_OVERFLOW:  u8 = 0b0100_0000;
-const FLAG_X:         u8 = 0b0010_0000;
-const FLAG_BREAK:     u8 = 0b0001_0000;
-const FLAG_DECIMAL:   u8 = 0b0000_1000;
-const FLAG_INTERRUPT: u8 = 0b0000_0100;
-const FLAG_ZERO:      u8 = 0b0000_0010;
-const FLAG_CARRY:     u8 = 0b0000_0001;
-
 const CYCLE_TABLE: [u8;256] = [
     //       0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
     /* 0 */  7, 6, 0, 0, 0, 3, 5, 0, 3, 2, 2, 0, 0, 4, 6, 0,
@@ -50,16 +41,29 @@ const CROSSPAGE_CYCLE_TABLE: [u8;256] = [
 ];
 
 pub struct Cpu {
+    // registers
     a: u8,
     x: u8,
     y: u8,
     sp: u8,
     pc: u16,
     p: u8,
+
+    // status flags
+    negative: bool,
+    overflow: bool,
+    unused: bool,
+    brk: bool,
+    decimal: bool,
+    interrupt: bool,
+    zero: bool,
+    carry: bool,
+
+    // misc
     cycle_count: usize,
     mem: Memory,
-    irq: bool,
-    nmi: bool,
+    //irq: bool,
+    //nmi: bool,
 }
 
 impl Access for Cpu {
@@ -163,46 +167,66 @@ impl AddressingMode {
 
 impl Cpu {
     pub fn new() -> Self {
-        Cpu {
+        let mut cpu = Cpu {
             a: 0,
             x: 0,
             y: 0,
             sp: 0,
             pc: 0,
             p: 0,
+
+            negative: false,
+            overflow: false,
+            unused: false,
+            brk: false,
+            decimal: false,
+            interrupt: false,
+            zero: false,
+            carry: false,
+
             cycle_count: 0,
             mem: Memory::new(),
-            nmi: false,
-            irq: false,
-        }
+            //nmi: false,
+            //irq: false,
+        };
+
+        // Set power-up state
+        // Ref: https://wiki.nesdev.com/w/index.php/CPU_power_up_state
+        cpu.sp = 0xfd;
+        cpu.set_status_from_byte(0x34);
+        cpu
     }
 
-    #[inline(always)]
-    fn set_flag(&mut self, flag: u8) {
-        self.p |= flag;
+    fn status_as_byte(&self) -> u8 {
+        (if self.negative  { 1 } else { 0 }) << 7 |
+        (if self.overflow  { 1 } else { 0 }) << 6 |
+        (if self.unused    { 1 } else { 0 }) << 5 |
+        (if self.brk       { 1 } else { 0 }) << 4 |
+        (if self.decimal   { 1 } else { 0 }) << 3 |
+        (if self.interrupt { 1 } else { 0 }) << 2 |
+        (if self.zero      { 1 } else { 0 }) << 1 |
+        (if self.carry     { 1 } else { 0 })
     }
 
-    #[inline(always)]
-    fn set_flag_if(&mut self, flag: u8, condition: bool) {
-        if condition {
-            self.p |= flag; 
-        }
-    }
-
-    #[inline(always)]
-    fn clear_flag(&mut self, flag: u8) {
-        self.p &= !flag;
-    }
-
-    #[inline(always)]
-    fn is_flag_set(&self, flag: u8) -> bool {
-        self.p & flag != 0
+    fn set_status_from_byte(&mut self, byte: u8) {
+        if (byte & 0b1000_0000) != 0 { self.negative = true; }
+        if (byte & 0b0100_0000) != 0 { self.overflow = true; }
+        if (byte & 0b0010_0000) != 0 { self.unused = true; }
+        if (byte & 0b0001_0000) != 0 { self.brk = true; }
+        if (byte & 0b0000_1000) != 0 { self.decimal = true; }
+        if (byte & 0b0000_0100) != 0 { self.interrupt = true; }
+        if (byte & 0b0000_0010) != 0 { self.zero = true; }
+        if (byte & 0b0000_0001) != 0 { self.carry = true; }
     }
 
     #[inline(always)]
     fn set_zero_negative(&mut self, value: u8) {
-        self.set_flag_if(FLAG_ZERO, value == 0);
-        self.set_flag_if(FLAG_NEGATIVE, value & 0x80 != 0);
+        if value == 0 {
+            self.zero = true;
+        }
+        if value & 0x80 != 0 {
+            self.negative = true;
+        }
     }
 
     fn fetch(&mut self) -> u8 {
@@ -246,33 +270,37 @@ impl Cpu {
         }
     }
 
-    fn poll_int(&mut self) {
-        if self.nmi || (self.irq && !self.is_flag_set(FLAG_INTERRUPT)) {
-            let value = self.p;
-            self.push(value);
-            let value = self.pc;
-            self.push_word(value);
-            if self.nmi {
-                self.pc = 0xfffa;
-                self.nmi = false;
-            }
-            else {
-                self.pc = 0xfffe;
-                self.irq = false;
-            }
-        }
-    }
+    //fn poll_int(&mut self) {
+    //    if self.nmi || (self.irq && !self.is_flag_set(FLAG_INTERRUPT)) {
+    //        let value = self.p;
+    //        self.push(value);
+    //        let value = self.pc;
+    //        self.push_word(value);
+    //        if self.nmi {
+    //            self.pc = 0xfffa;
+    //            self.nmi = false;
+    //        }
+    //        else {
+    //            self.pc = 0xfffe;
+    //            self.irq = false;
+    //        }
+    //    }
+    //}
 
     fn adc(&mut self, operand: u8) {
         let mut result = operand as u16 + self.a as u16;
-        if self.is_flag_set(FLAG_CARRY) {
+        if self.carry {
             result += 1;
         }
-        self.set_flag_if(FLAG_CARRY, result > 0xff);
+        if result > 0xff {
+            self.carry = true;
+        }
         let result = result as u8;
         self.set_zero_negative(result);
         let a = self.a;
-        self.set_flag_if(FLAG_OVERFLOW, (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0);
+        if (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0 {
+            self.overflow = true;
+        }
         // XXX merge with accumulator
         self.a = result;
     }
@@ -285,78 +313,90 @@ impl Cpu {
     }
 
     fn asl(&mut self, operand: u8) -> u8 {
-        self.set_flag_if(FLAG_CARRY, operand & 0x80 != 0);
+        if operand & 0x80 != 0 {
+            self.carry = true;
+        }
         let result = operand << 1;
         self.set_zero_negative(result);
         result
     }
 
     fn bcc(&mut self, at: u16) {
-        let cond = !self.is_flag_set(FLAG_CARRY);
+        let cond = !self.carry;
         self.jump_on_condition(at, cond);
     }
 
     fn bcs(&mut self, at: u16) {
-        let cond = self.is_flag_set(FLAG_CARRY);
+        let cond = self.carry;
         self.jump_on_condition(at, cond);
     }
 
     fn beq(&mut self, at: u16) {
-        let cond = self.is_flag_set(FLAG_ZERO);
+        let cond = self.zero;
         self.jump_on_condition(at, cond);
     }
 
     fn bmi(&mut self, at: u16) {
-        let cond = self.is_flag_set(FLAG_NEGATIVE);
+        let cond = self.negative;
         self.jump_on_condition(at, cond);
     }
 
     fn bne(&mut self, at: u16) {
-        let cond = !self.is_flag_set(FLAG_ZERO);
+        let cond = !self.zero;
         self.jump_on_condition(at, cond);
     }
 
     fn bpl(&mut self, at: u16) {
-        let cond = !self.is_flag_set(FLAG_NEGATIVE);
+        let cond = !self.negative;
         self.jump_on_condition(at, cond);
     }
 
     fn bvc(&mut self, at: u16) {
-        let cond = !self.is_flag_set(FLAG_OVERFLOW);
+        let cond = !self.overflow;
         self.jump_on_condition(at, cond);
     }
 
     fn bvs(&mut self, at: u16) {
-        let cond = self.is_flag_set(FLAG_OVERFLOW);
+        let cond = self.overflow;
         self.jump_on_condition(at, cond);
     }
 
     fn bit(&mut self, operand: u8) {
-        self.set_flag_if(FLAG_NEGATIVE, operand & 0x80 != 0);
-        self.set_flag_if(FLAG_OVERFLOW, operand & 0x40 != 0);
+        if operand & 0x80 != 0 {
+            self.negative = true;
+        }
+        if operand & 0x40 != 0 {
+            self.overflow = true;
+        }
         if operand & self.a == 0 {
-            self.set_flag(FLAG_ZERO);
+            self.zero = true;
         }
         else {
-            self.clear_flag(FLAG_ZERO);
+            self.zero = false;
         }
     }
 
     fn cmp(&mut self, operand: u8) {
         let result = self.a as i8 - operand as i8;
-        self.set_flag_if(FLAG_CARRY, result >= 0);
+        if result >= 0 {
+            self.carry = true;
+        }
         self.set_zero_negative(result as u8);
     }
 
     fn cpx(&mut self, operand: u8) {
         let result = self.x as i8 - operand as i8;
-        self.set_flag_if(FLAG_CARRY, result >= 0);
+        if result >= 0 {
+            self.carry = true;
+        }
         self.set_zero_negative(result as u8);
     }
 
     fn cpy(&mut self, operand: u8) {
         let result = self.y as i8 - operand as i8;
-        self.set_flag_if(FLAG_CARRY, result >= 0);
+        if result >= 0 {
+            self.carry = true;
+        }
         self.set_zero_negative(result as u8);
     }
 
@@ -426,7 +466,9 @@ impl Cpu {
     }
 
     fn lsr(&mut self, operand: u8) -> u8 {
-        self.set_flag_if(FLAG_CARRY, operand & 0x1 != 0);
+        if operand & 0x1 != 0 {
+            self.carry = true;
+        }
         let result = operand >> 1;
         self.set_zero_negative(result);
         result
@@ -441,10 +483,12 @@ impl Cpu {
 
     fn rol(&mut self, operand: u8) -> u8 {
         let mut result = (operand as u16) << 1;
-        if self.is_flag_set(FLAG_CARRY) {
+        if self.carry {
             result |= 0x1;
         }
-        self.set_flag_if(FLAG_CARRY, result > 0x00ff);
+        if result > 0x00ff {
+            self.carry = true;
+        }
         let result = result as u8;
         self.set_zero_negative(result);
         result
@@ -452,10 +496,12 @@ impl Cpu {
 
     fn ror(&mut self, operand: u8) -> u8 {
         let mut result = operand as u16;
-        if self.is_flag_set(FLAG_CARRY) {
+        if self.carry {
             result |= 0x0100;
         }
-        self.set_flag_if(FLAG_CARRY, result & 0x0001 != 0);
+        if result & 0x0001 != 0 {
+            self.carry = true;
+        }
         let result = (result >> 1) as u8;
         self.set_zero_negative(result);
         result
@@ -475,12 +521,16 @@ impl Cpu {
     fn sbc(&mut self, operand: u8) {
         let result = self.a as u16
             - operand as u16
-            - if self.is_flag_set(FLAG_CARRY) { 0 } else { 1 };
-        self.set_flag_if(FLAG_CARRY, result < 0x0100);
+            - if self.carry { 0 } else { 1 };
+        if result < 0x0100 {
+            self.carry = true;
+        }
         let result = result as u8;
         self.set_zero_negative(result);
         let a = self.a;
-        self.set_flag_if(FLAG_OVERFLOW, (a ^ result) & 0x80 != 0 && (a ^ operand) & 0x80 != 0);
+        if (a ^ result) & 0x80 != 0 && (a ^ operand) & 0x80 != 0 {
+            self.overflow = true;
+        }
         // XXX merge with accumulator
         self.a = result;
     }
@@ -620,10 +670,10 @@ fn decode(cpu: &mut Cpu) {
         0x24 => rdonly!(bit, cpu, m, zeropage),
         0x2c => rdonly!(bit, cpu, m, absolute),
 
-        0x18 => cpu.clear_flag(FLAG_CARRY),     // clc
-        0xd8 => cpu.clear_flag(FLAG_DECIMAL),   // cld
-        0x58 => cpu.clear_flag(FLAG_INTERRUPT), // cli
-        0xb8 => cpu.clear_flag(FLAG_OVERFLOW),  // clv
+        0x18 => cpu.carry = false,     // clc
+        0xd8 => cpu.decimal = false,   // cld
+        0x58 => cpu.interrupt = false, // cli
+        0xb8 => cpu.overflow = false,  // clv
 
         0xc9 => rdonly!(cmp, cpu, m, immediate),
         0xc5 => rdonly!(cmp, cpu, m, zeropage),
@@ -755,9 +805,9 @@ fn decode(cpu: &mut Cpu) {
         0xe1 => rdonly!(sbc, cpu, m, indirect_x),
         0xf1 => rdonly!(sbc, cpu, m, indirect_y),
 
-        0x38 => cpu.set_flag(FLAG_CARRY),     // sec
-        0xf8 => cpu.set_flag(FLAG_DECIMAL),   // sed
-        0x78 => cpu.set_flag(FLAG_INTERRUPT), // sei
+        0x38 => cpu.carry = true,     // sec
+        0xf8 => cpu.decimal = true,   // sed
+        0x78 => cpu.interrupt = true, // sei
 
         0x85 => other!(sta, cpu, m, zeropage),
         0x95 => other!(sta, cpu, m, zeropage_x),
