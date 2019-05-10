@@ -1,20 +1,22 @@
 use std::ops::{Deref, DerefMut};
 
 pub trait Access {
+    // read a single byte
     fn read(&self, addr: u16) -> u8;
+
+    // write a single byte
     fn write(&mut self, addr: u16, value: u8);
 
-    fn read_word(&self, addr: u16) -> u16 {
-        let lo = self.read(addr) as u16;
-        let hi = self.read(addr + 1) as u16;
-        (hi << 8) | lo
+    // read 2 bytes starting from `addr`
+    fn read16(&self, addr: u16) -> u16 {
+        self.read(addr) as u16 | (self.read(addr + 1) as u16) << 8
     }
 
-    fn read_word_wrap(&self, addr: u16) -> u16 {
+    // read 2 bytes but with lower address wrapped around
+    // http://nesdev.com/6502_cpu.txt
+    fn read16_wrapped(&self, addr: u16) -> u16 {
         let wrapped = addr & 0xff00 | (addr + 1) & 0x00ff;
-        let lo = self.read(addr) as u16;
-        let hi = self.read(wrapped) as u16;
-        (hi << 8) | lo
+        self.read(addr) as u16 | (self.read(wrapped) as u16) << 8
     }
 }
 

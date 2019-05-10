@@ -1,6 +1,6 @@
 use mem::{Memory, Access};
 
-const CYCLE_TABLE: [u8;256] = [
+const CYCLES: [u8;256] = [
     //       0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
     /* 0 */  7, 6, 0, 0, 0, 3, 5, 0, 3, 2, 2, 0, 0, 4, 6, 0,
     /* 1 */  2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
@@ -20,7 +20,7 @@ const CYCLE_TABLE: [u8;256] = [
     /* f */  2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
 ];
 
-const CROSSPAGE_CYCLE_TABLE: [u8;256] = [
+const XPAGE_CYCLES: [u8;256] = [
     //       0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
     /* 0 */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     /* 1 */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
@@ -40,28 +40,25 @@ const CROSSPAGE_CYCLE_TABLE: [u8;256] = [
     /* f */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
 ];
 
+// status flags
+const NEGATIVE:  u8 = 0b1000_0000;
+const OVERFLOW:  u8 = 0b0100_0000;
+const XFLAG:     u8 = 0b0010_0000;
+const BREAK:     u8 = 0b0001_0000;
+const DECIMAL:   u8 = 0b0000_1000;
+const INTERRUPT: u8 = 0b0000_0100;
+const ZERO:      u8 = 0b0000_0010;
+const CARRY:     u8 = 0b0000_0001;
+
 pub struct Cpu {
-    // registers
-    a: u8,
-    x: u8,
-    y: u8,
+    a:  u8,
+    x:  u8,
+    y:  u8,
     sp: u8,
+    p:  u8,
     pc: u16,
-    p: u8,
-
-    // status flags
-    negative: bool,
-    overflow: bool,
-    unused: bool,
-    brk: bool,
-    decimal: bool,
-    interrupt: bool,
-    zero: bool,
-    carry: bool,
-
-    // misc
-    cycle_count: usize,
     mem: Memory,
+    cycle_count: usize,
 }
 
 impl Access for Cpu {
@@ -74,313 +71,303 @@ impl Access for Cpu {
     }
 }
 
-struct AddressingMode {
-    addr: u16,
+trait Addressing {
+    fn address(&self, cpu: &Cpu) -> u8;
+    fn writeback(&self, _cpu: &mut Cpu, _value: u8) {}
 }
 
-impl AddressingMode {
-    fn new() -> Self {
-        AddressingMode { addr: 0 }
-    }
+struct Immediate;
+struct Accumulator;
+struct FromMemory { addr: u16 }
 
-    #[inline(always)]
-    fn wb(&mut self, cpu: &mut Cpu, value: u8) {
-        cpu.write(self.addr, value);
+impl Addressing for Immediate {
+    fn address(&self, cpu: &Cpu) -> u8 {
+        cpu.read_at_pc()
     }
+}
 
-    #[inline(always)]
-    fn accumulator(&mut self, cpu: &mut Cpu) -> u8 {
+impl Addressing for Accumulator {
+    fn address(&self, cpu: &Cpu) -> u8 {
         cpu.a
     }
 
-    #[inline(always)]
-    fn accumulator_wb(&mut self, cpu: &mut Cpu, value: u8) {
+    fn writeback(&self, cpu: &mut Cpu, value: u8) {
         cpu.a = value;
     }
+}
 
-    #[inline(always)]
-    fn immediate(&mut self, cpu: &mut Cpu) -> u8 {
-        cpu.get_operand()
-    }
-
-    fn zeropage(&mut self, cpu: &mut Cpu) -> u8 {
-        self.addr = cpu.get_operand() as u16;
+impl Addressing for FromMemory {
+    fn address(&self, cpu: &Cpu) -> u8 {
         cpu.read(self.addr)
     }
 
-    fn zeropage_x(&mut self, cpu: &mut Cpu) -> u8 {
-        self.addr = (cpu.get_operand() as u16 + cpu.x as u16) & 0x00ff;
-        cpu.read(self.addr)
+    fn writeback(&self, cpu: &mut Cpu, value: u8) {
+        cpu.write(self.addr, value);
     }
+}
 
-    fn zeropage_y(&mut self, cpu: &mut Cpu) -> u8 {
-        self.addr = (cpu.get_operand() as u16 + cpu.y as u16) & 0x00ff;
-        cpu.read(self.addr)
-    }
-
-    fn absolute(&mut self, cpu: &mut Cpu) -> u8 {
-        self.addr = cpu.get_operand_word();
-        cpu.read(self.addr)
-    }
-
-    fn absolute_x(&mut self, cpu: &mut Cpu) -> u8 {
-        let base = cpu.get_operand_word();
-        self.addr = base.wrapping_add(cpu.x as u16);
-        cpu.read(self.addr)
-    }
-
-    fn absolute_y(&mut self, cpu: &mut Cpu) -> u8 {
-        let base = cpu.get_operand_word();
-        self.addr = base.wrapping_add(cpu.y as u16);
-        cpu.read(self.addr)
-    }
-
-    // indexed indirect
-    fn indirect_x(&mut self, cpu: &mut Cpu) -> u8 {
-        let base = cpu.get_operand();
-        let lo = base.wrapping_add(cpu.x) as u16;
-        let hi = (lo as u8).wrapping_add(1) as u16;
-
-        self.addr = cpu.read(lo) as u16 | (cpu.read(hi) as u16) << 8;
-
-        cpu.read(self.addr)
-    }
-
-    // indirect indexed
-    fn indirect_y(&mut self, cpu: &mut Cpu) -> u8 {
-        let lo = cpu.get_operand() as u16;
-        let hi = (lo as u8).wrapping_add(1) as u16;
-        let base = cpu.read(lo) as u16 | (cpu.read(hi) as u16) << 8;
-
-        self.addr = base.wrapping_add(cpu.y as u16);
-
-        cpu.read(self.addr)
-    }
-
-    fn relative(&mut self, cpu: &mut Cpu) {
-        let offset = cpu.get_operand() as i8 as i16;
-        self.addr = (cpu.pc as i16).wrapping_add(offset) as u16;
-    }
+macro_rules! I {
+    ($cpu:ident, $inst_fn:ident, $mode_fn:ident) => {{
+        let mode = $cpu.$mode_fn();
+        $cpu.$inst_fn(mode);
+    }}
 }
 
 impl Cpu {
     pub fn new() -> Self {
-        let mut cpu = Cpu {
-            a: 0,
-            x: 0,
-            y: 0,
-            sp: 0,
-            pc: 0,
-            p: 0,
-
-            negative: false,
-            overflow: false,
-            unused: false,
-            brk: false,
-            decimal: false,
-            interrupt: false,
-            zero: false,
-            carry: false,
-
-            cycle_count: 0,
-            mem: Memory::new(),
-        };
-
         // Set power-up state
         // Ref: https://wiki.nesdev.com/w/index.php/CPU_power_up_state
-        cpu.sp = 0xfd;
-        cpu.set_status_from_byte(0x34);
-        cpu
-    }
-
-    fn status_as_byte(&self) -> u8 {
-        (if self.negative  { 1 } else { 0 }) << 7 |
-        (if self.overflow  { 1 } else { 0 }) << 6 |
-        (if self.unused    { 1 } else { 0 }) << 5 |
-        (if self.brk       { 1 } else { 0 }) << 4 |
-        (if self.decimal   { 1 } else { 0 }) << 3 |
-        (if self.interrupt { 1 } else { 0 }) << 2 |
-        (if self.zero      { 1 } else { 0 }) << 1 |
-        (if self.carry     { 1 } else { 0 })
-    }
-
-    fn set_status_from_byte(&mut self, byte: u8) {
-        if (byte & 0b1000_0000) != 0 { self.negative = true; }
-        if (byte & 0b0100_0000) != 0 { self.overflow = true; }
-        if (byte & 0b0010_0000) != 0 { self.unused = true; }
-        if (byte & 0b0001_0000) != 0 { self.brk = true; }
-        if (byte & 0b0000_1000) != 0 { self.decimal = true; }
-        if (byte & 0b0000_0100) != 0 { self.interrupt = true; }
-        if (byte & 0b0000_0010) != 0 { self.zero = true; }
-        if (byte & 0b0000_0001) != 0 { self.carry = true; }
+        Cpu {
+            a:  0,
+            x:  0,
+            y:  0,
+            sp: 0xfd,
+            pc: 0,
+            p:  0x34,
+            mem: Memory::new(),
+            cycle_count: 0,
+        }
     }
 
     #[inline(always)]
+    fn set_flag(&mut self, flag: u8) {
+        self.p |= flag;
+    }
+
+    #[inline(always)]
+    fn clear_flag(&mut self, flag: u8) {
+        self.p &= !flag;
+    }
+
+    #[inline(always)]
+    fn flag_on(&self, flag: u8) -> bool {
+        self.p & flag != 0
+    }
+
     fn set_zero_negative(&mut self, value: u8) {
         if value == 0 {
-            self.zero = true;
+            self.set_flag(ZERO);
         }
         if value & 0x80 != 0 {
-            self.negative = true;
+            self.set_flag(NEGATIVE);
         }
     }
 
-    fn get_operand(&self) -> u8 {
+    // XXX check pc increment, do it here
+    fn read_at_pc(&self) -> u8 {
         let addr = self.pc.wrapping_add(1);
         self.read(addr)
     }
 
-    fn get_operand_word(&self) -> u16 {
+    fn read16_at_pc(&self) -> u16 {
         let addr = self.pc.wrapping_add(1);
-        self.read_word(addr)
+        self.read16(addr)
     }
 
     fn push(&mut self, value: u8) {
         let addr = self.sp as u16 + 0x0100;
         self.write(addr, value);
-        self.sp = self.sp.wrapping_sub(1);
+        self.sp -= 1;
     }
 
-    fn push_word(&mut self, value: u16) {
+    fn push16(&mut self, value: u16) {
         self.push(((value & 0xff00) >> 8) as u8);
         self.push(value as u8);
     }
 
     fn pop(&mut self) -> u8 {
-        self.sp = self.sp.wrapping_add(1);
+        self.sp += 1;
         self.read(self.sp as u16 + 0x0100)
     }
 
-    fn pop_word(&mut self) -> u16 {
+    fn pop16(&mut self) -> u16 {
         let value = self.pop() as u16;
         let value = value | (self.pop() as u16) << 8;
         value
     }
 
-    fn jump_on_condition(&mut self, addr: u16, condition: bool) {
+    fn jump_on_cond(&mut self, addr: u16, condition: bool) {
         if condition {
             self.cycle_count += 1;
             self.pc = addr;
         }
     }
 
-    fn adc(&mut self, operand: u8) {
-        let mut result = operand as u16 + self.a as u16;
-        if self.carry {
-            result += 1;
+    // addressing modes: http://obelisk.me.uk/6502/addressing.html
+    fn immediate(&self) -> Immediate {
+        Immediate {}
+    }
+
+    fn accumulator(&self) -> Accumulator {
+        Accumulator {}
+    }
+
+    fn zeropage(&self) -> FromMemory {
+        FromMemory { addr: self.read_at_pc() as u16 }
+    }
+
+    fn zeropage_x(&self) -> FromMemory {
+        FromMemory { addr: self.read_at_pc().wrapping_add(self.x) as u16 }
+    }
+
+    fn zeropage_y(&self) -> FromMemory {
+        FromMemory { addr: self.read_at_pc().wrapping_add(self.y) as u16 }
+    }
+
+    fn absolute(&self) -> FromMemory {
+        FromMemory { addr: self.read16_at_pc() }
+    }
+
+    fn absolute_x(&self) -> FromMemory {
+        FromMemory { addr: self.read16_at_pc() + self.x as u16 }
+    }
+
+    fn absolute_y(&self) -> FromMemory {
+        FromMemory { addr: self.read16_at_pc() + self.y as u16 }
+    }
+
+    fn indirect(&self) -> FromMemory {
+        FromMemory { addr: self.read16_wrapped(self.read16_at_pc()) }
+    }
+
+    fn indexed_indirect(&self) -> FromMemory {
+        let base = self.read_at_pc().wrapping_add(self.x);
+        FromMemory { addr: self.read16_wrapped(base as u16) }
+    }
+
+    fn indirect_indexed(&self) -> FromMemory {
+        let v = self.read16_wrapped(self.read_at_pc() as u16);
+        FromMemory { addr: v + self.y as u16 }
+    }
+
+    fn relative(&self) -> FromMemory {
+        let offset = self.read_at_pc();
+        FromMemory { addr: (self.pc as i16).wrapping_add(offset as i8 as i16) as u16 }
+    }
+
+    // instructions
+    fn adc<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
+        let mut sum = operand as u16 +
+                      self.a as u16 +
+                      if self.flag_on(CARRY) { 1 } else { 0 };
+        if sum > 0xff {
+            self.set_flag(CARRY);
         }
-        if result > 0xff {
-            self.carry = true;
-        }
-        let result = result as u8;
+        let result = sum as u8;
         self.set_zero_negative(result);
         let a = self.a;
         if (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0 {
-            self.overflow = true;
+            self.set_flag(OVERFLOW);
         }
-        // XXX merge with accumulator
         self.a = result;
     }
 
-    fn and(&mut self, operand: u8) {
+    fn and<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         let result = operand & self.a;
         self.set_zero_negative(result);
-        // XXX merge with accumulator
         self.a = result;
     }
 
-    fn asl(&mut self, operand: u8) -> u8 {
+    fn asl<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         if operand & 0x80 != 0 {
-            self.carry = true;
+            self.set_flag(CARRY);
         }
         let result = operand << 1;
         self.set_zero_negative(result);
-        result
+        mode.writeback(self, result);
     }
 
-    fn bcc(&mut self, addr: u16) {
-        let cond = !self.carry;
-        self.jump_on_condition(addr, cond);
+    fn bcc(&mut self, mode: FromMemory) {
+        let cond = !self.flag_on(CARRY);
+        self.jump_on_cond(mode.addr, cond);
     }
 
-    fn bcs(&mut self, addr: u16) {
-        let cond = self.carry;
-        self.jump_on_condition(addr, cond);
+    fn bcs(&mut self, mode: FromMemory) {
+        let cond = self.flag_on(CARRY);
+        self.jump_on_cond(mode.addr, cond);
     }
 
-    fn beq(&mut self, addr: u16) {
-        let cond = self.zero;
-        self.jump_on_condition(addr, cond);
+    fn beq(&mut self, mode: FromMemory) {
+        let cond = self.flag_on(ZERO);
+        self.jump_on_cond(mode.addr, cond);
     }
 
-    fn bmi(&mut self, addr: u16) {
-        let cond = self.negative;
-        self.jump_on_condition(addr, cond);
+    fn bmi(&mut self, mode: FromMemory) {
+        let cond = self.flag_on(NEGATIVE);
+        self.jump_on_cond(mode.addr, cond);
     }
 
-    fn bne(&mut self, addr: u16) {
-        let cond = !self.zero;
-        self.jump_on_condition(addr, cond);
+    fn bne(&mut self, mode: FromMemory) {
+        let cond = !self.flag_on(ZERO);
+        self.jump_on_cond(mode.addr, cond);
     }
 
-    fn bpl(&mut self, addr: u16) {
-        let cond = !self.negative;
-        self.jump_on_condition(addr, cond);
+    fn bpl(&mut self, mode: FromMemory) {
+        let cond = !self.flag_on(NEGATIVE);
+        self.jump_on_cond(mode.addr, cond);
     }
 
-    fn bvc(&mut self, addr: u16) {
-        let cond = !self.overflow;
-        self.jump_on_condition(addr, cond);
+    fn bvc(&mut self, mode: FromMemory) {
+        let cond = !self.flag_on(OVERFLOW);
+        self.jump_on_cond(mode.addr, cond);
     }
 
-    fn bvs(&mut self, addr: u16) {
-        let cond = self.overflow;
-        self.jump_on_condition(addr, cond);
+    fn bvs(&mut self, mode: FromMemory) {
+        let cond = self.flag_on(OVERFLOW);
+        self.jump_on_cond(mode.addr, cond);
     }
 
-    fn bit(&mut self, operand: u8) {
+    fn bit<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         if operand & 0x80 != 0 {
-            self.negative = true;
+            self.set_flag(NEGATIVE);
         }
         if operand & 0x40 != 0 {
-            self.overflow = true;
+            self.set_flag(OVERFLOW);
         }
         if operand & self.a == 0 {
-            self.zero = true;
+            self.set_flag(ZERO);
         }
         else {
-            self.zero = false;
+            self.clear_flag(ZERO);
         }
     }
 
-    fn cmp(&mut self, operand: u8) {
+    fn cmp<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         let result = self.a as i8 - operand as i8;
         if result >= 0 {
-            self.carry = true;
+            self.set_flag(CARRY);
         }
         self.set_zero_negative(result as u8);
     }
 
-    fn cpx(&mut self, operand: u8) {
+    fn cpx<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         let result = self.x as i8 - operand as i8;
         if result >= 0 {
-            self.carry = true;
+            self.set_flag(CARRY);
         }
         self.set_zero_negative(result as u8);
     }
 
-    fn cpy(&mut self, operand: u8) {
+    fn cpy<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         let result = self.y as i8 - operand as i8;
         if result >= 0 {
-            self.carry = true;
+            self.set_flag(CARRY);
         }
         self.set_zero_negative(result as u8);
     }
 
-    fn dec(&mut self, operand: u8) -> u8 {
+    fn dec<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         let result = operand.wrapping_sub(1);
         self.set_zero_negative(result);
-        result
+        mode.writeback(self, result);
     }
 
     fn dex(&mut self) {
@@ -395,17 +382,18 @@ impl Cpu {
         self.y = result;
     }
 
-    fn eor(&mut self, operand: u8) {
+    fn eor<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         let result = self.a ^ operand;
         self.set_zero_negative(result);
-        // XXX merge with accumulator
         self.a = result;
     }
 
-    fn inc(&mut self, operand: u8) -> u8 {
+    fn inc<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         let result = operand.wrapping_add(1);
         self.set_zero_negative(result);
-        result
+        mode.writeback(self, result);
     }
 
     fn inx(&mut self) {
@@ -420,398 +408,365 @@ impl Cpu {
         self.y = result;
     }
 
-    fn jsr(&mut self, addr: u16) {
-        let ret = self.pc.saturating_sub(1);
-        self.push_word(ret);
-        self.pc = addr;
+    #[inline(always)]
+    fn jmp(&mut self, mode: FromMemory) {
+        self.pc = mode.addr;
     }
 
-    fn lda(&mut self, operand: u8) {
+    fn jsr(&mut self, mode: FromMemory) {
+        let ret = self.pc - 1;
+        self.push16(ret);
+        self.pc = mode.addr;
+    }
+
+    fn lda<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         self.set_zero_negative(operand);
-        // XXX merge with accumulator
         self.a = operand;
     }
 
-    fn ldx(&mut self, operand: u8) {
+    fn ldx<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         self.set_zero_negative(operand);
         self.x = operand;
     }
 
-    fn ldy(&mut self, operand: u8) {
+    fn ldy<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         self.set_zero_negative(operand);
         self.y = operand;
     }
 
-    fn lsr(&mut self, operand: u8) -> u8 {
+    fn lsr<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         if operand & 0x1 != 0 {
-            self.carry = true;
+            self.set_flag(CARRY);
         }
         let result = operand >> 1;
         self.set_zero_negative(result);
-        result
+        mode.writeback(self, result);
     }
 
-    fn ora(&mut self, operand: u8) {
+    fn ora<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
         let result = operand | self.a;
         self.set_zero_negative(result);
-        // XXX merge with accumulator
         self.a = result;
     }
 
-    fn rol(&mut self, operand: u8) -> u8 {
-        let mut result = (operand as u16) << 1;
-        if self.carry {
-            result |= 0x1;
+    fn rol<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
+        let mut shift = (operand as u16) << 1;
+        if self.flag_on(CARRY) {
+            shift |= 0x1;
         }
-        if result > 0x00ff {
-            self.carry = true;
+        if shift > 0x00ff {
+            self.set_flag(CARRY);
         }
-        let result = result as u8;
+        let result = shift as u8;
         self.set_zero_negative(result);
-        result
+        mode.writeback(self, result);
     }
 
-    fn ror(&mut self, operand: u8) -> u8 {
-        let mut result = operand as u16;
-        if self.carry {
-            result |= 0x0100;
+    fn ror<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
+        let mut shift = operand as u16;
+        if self.flag_on(CARRY) {
+            shift |= 0x0100;
         }
-        if result & 0x0001 != 0 {
-            self.carry = true;
+        if shift & 0x0001 != 0 {
+            self.set_flag(CARRY);
         }
-        let result = (result >> 1) as u8;
+        let result = (shift >> 1) as u8;
         self.set_zero_negative(result);
-        result
+        mode.writeback(self, result);
     }
 
-    fn rti(&mut self) {
-        self.p = self.pop();
-        self.pc = self.pop_word() as u16;
-    }
-
-    fn rts(&mut self) {
-        let addr = self.pop_word() as u16;
-        let addr = addr.saturating_add(1);
-        self.pc = addr;
-    }
-
-    fn sbc(&mut self, operand: u8) {
-        let result = self.a as u16
-            - operand as u16
-            - if self.carry { 0 } else { 1 };
-        if result < 0x0100 {
-            self.carry = true;
+    fn sbc<T: Addressing>(&mut self, mode: T) {
+        let operand = mode.address(self);
+        let diff = self.a as u16 -
+                   operand as u16 -
+                   if self.flag_on(CARRY) { 0 } else { 1 };
+        if diff < 0x0100 {
+            self.set_flag(CARRY);
         }
-        let result = result as u8;
+        let result = diff as u8;
         self.set_zero_negative(result);
         let a = self.a;
         if (a ^ result) & 0x80 != 0 && (a ^ operand) & 0x80 != 0 {
-            self.overflow = true;
+            self.set_flag(OVERFLOW);
         }
-        // XXX merge with accumulator
         self.a = result;
     }
 
-    fn sta(&mut self, addr: u16) {
-        let value = self.a;
-        self.write(addr, value);
+    #[inline(always)]
+    fn sta<T: Addressing>(&mut self, mode: T) {
+        let a = self.a;
+        mode.writeback(self, a);
     }
 
-    fn stx(&mut self, addr: u16) {
-        let value = self.x;
-        self.write(addr, value);
+    #[inline(always)]
+    fn stx<T: Addressing>(&mut self, mode: T) {
+        let x = self.x;
+        mode.writeback(self, x);
     }
 
-    fn sty(&mut self, addr: u16) {
-        let value = self.y;
-        self.write(addr, value);
+    #[inline(always)]
+    fn sty<T: Addressing>(&mut self, mode: T) {
+        let y = self.y;
+        mode.writeback(self, y);
     }
 
     fn tax(&mut self) {
-        let value = self.a;
-        self.set_zero_negative(value);
-        self.x = value;
+        let a = self.a;
+        self.set_zero_negative(a);
+        self.x = a;
     }
 
     fn tay(&mut self) {
-        let value = self.a;
-        self.set_zero_negative(value);
-        self.y = value;
+        let a = self.a;
+        self.set_zero_negative(a);
+        self.y = a;
     }
 
     fn tsx(&mut self) {
-        let value = self.sp;
-        self.set_zero_negative(value);
-        self.x = value;
+        let sp = self.sp;
+        self.set_zero_negative(sp);
+        self.x = sp;
     }
 
     fn tsy(&mut self) {
-        let value = self.sp;
-        self.set_zero_negative(value);
-        self.y = value;
+        let sp = self.sp;
+        self.set_zero_negative(sp);
+        self.y = sp;
     }
 
     fn txa(&mut self) {
-        let value = self.x;
-        self.set_zero_negative(value);
-        self.a = value;
+        let x = self.x;
+        self.set_zero_negative(x);
+        self.a = x;
     }
 
     fn txs(&mut self) {
-        let value = self.x;
-        self.set_zero_negative(value);
-        self.sp = value;
+        let x = self.x;
+        self.set_zero_negative(x);
+        self.sp = x;
     }
 
     fn tya(&mut self) {
-        let value = self.y;
-        self.set_zero_negative(value);
-        self.a = value;
-    }
-}
-
-macro_rules! rdonly {
-    ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
-        {
-            let operand = $m.$mode($cpu);
-            $cpu.$inst(operand);
-        }
-    }
-}
-
-macro_rules! rdwr {
-    ($inst:ident, $cpu:ident, $m:ident, accumulator) => {
-        {
-            let operand = $m.accumulator($cpu);
-            let result = $cpu.$inst(operand);
-            $m.accumulator_wb($cpu, result);
-        }
-    };
-
-    ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
-        {
-            let operand = $m.$mode($cpu);
-            let result = $cpu.$inst(operand);
-            $m.wb($cpu, result);
-        }
-    }
-}
-
-macro_rules! other {
-    ($inst:ident, $cpu:ident, $m:ident, $mode:ident) => {
-        {
-            $m.$mode($cpu);
-            $cpu.$inst($m.addr);
-        }
-    }
-}
-
-fn decode(cpu: &mut Cpu) {
-    let opcode = cpu.get_operand();
-    let mut m = AddressingMode::new();
-
-    match opcode {
-        0x69 => rdonly!(adc, cpu, m, immediate),
-        0x65 => rdonly!(adc, cpu, m, zeropage),
-        0x75 => rdonly!(adc, cpu, m, zeropage_x),
-        0x6d => rdonly!(adc, cpu, m, absolute),
-        0x7d => rdonly!(adc, cpu, m, absolute_x),
-        0x79 => rdonly!(adc, cpu, m, absolute_y),
-        0x61 => rdonly!(adc, cpu, m, indirect_x),
-        0x71 => rdonly!(adc, cpu, m, indirect_y),
-
-        0x29 => rdonly!(and, cpu, m, immediate),
-        0x25 => rdonly!(and, cpu, m, zeropage),
-        0x35 => rdonly!(and, cpu, m, zeropage_x),
-        0x2d => rdonly!(and, cpu, m, absolute),
-        0x3d => rdonly!(and, cpu, m, absolute_x),
-        0x39 => rdonly!(and, cpu, m, absolute_y),
-        0x21 => rdonly!(and, cpu, m, indirect_x),
-        0x31 => rdonly!(and, cpu, m, indirect_y),
-
-        0x0a => rdwr!(asl, cpu, m, accumulator),
-        0x06 => rdwr!(asl, cpu, m, zeropage),
-        0x16 => rdwr!(asl, cpu, m, zeropage_x),
-        0x0e => rdwr!(asl, cpu, m, absolute),
-        0x1e => rdwr!(asl, cpu, m, absolute_x),
-
-        0x90 => other!(bcc, cpu, m, relative),
-        0xb0 => other!(bcs, cpu, m, relative),
-        0xf0 => other!(beq, cpu, m, relative),
-        0x30 => other!(bmi, cpu, m, relative),
-        0xd0 => other!(bne, cpu, m, relative),
-        0x10 => other!(bpl, cpu, m, relative),
-        0x50 => other!(bvc, cpu, m, relative),
-        0x70 => other!(bvs, cpu, m, relative),
-
-        0x24 => rdonly!(bit, cpu, m, zeropage),
-        0x2c => rdonly!(bit, cpu, m, absolute),
-
-        0x18 => cpu.carry = false,     // clc
-        0xd8 => cpu.decimal = false,   // cld
-        0x58 => cpu.interrupt = false, // cli
-        0xb8 => cpu.overflow = false,  // clv
-
-        0xc9 => rdonly!(cmp, cpu, m, immediate),
-        0xc5 => rdonly!(cmp, cpu, m, zeropage),
-        0xd5 => rdonly!(cmp, cpu, m, zeropage_x),
-        0xcd => rdonly!(cmp, cpu, m, absolute),
-        0xdd => rdonly!(cmp, cpu, m, absolute_x),
-        0xd9 => rdonly!(cmp, cpu, m, absolute_y),
-        0xc1 => rdonly!(cmp, cpu, m, indirect_x),
-        0xd1 => rdonly!(cmp, cpu, m, indirect_y),
-
-        0xe0 => rdonly!(cpx, cpu, m, immediate),
-        0xe4 => rdonly!(cpx, cpu, m, zeropage),
-        0xec => rdonly!(cpx, cpu, m, absolute),
-
-        0xc0 => rdonly!(cpy, cpu, m, immediate),
-        0xc4 => rdonly!(cpy, cpu, m, zeropage),
-        0xcc => rdonly!(cpy, cpu, m, absolute),
-
-        0xc6 => rdwr!(dec, cpu, m, zeropage),
-        0xd6 => rdwr!(dec, cpu, m, zeropage_x),
-        0xce => rdwr!(dec, cpu, m, absolute),
-        0xde => rdwr!(dec, cpu, m, absolute_x),
-
-        0xca => cpu.dex(),
-        0x88 => cpu.dey(),
-
-        0x49 => rdonly!(eor, cpu, m, immediate),
-        0x45 => rdonly!(eor, cpu, m, zeropage),
-        0x55 => rdonly!(eor, cpu, m, zeropage_x),
-        0x4d => rdonly!(eor, cpu, m, absolute),
-        0x5d => rdonly!(eor, cpu, m, absolute_x),
-        0x59 => rdonly!(eor, cpu, m, absolute_y),
-        0x41 => rdonly!(eor, cpu, m, indirect_x),
-        0x51 => rdonly!(eor, cpu, m, indirect_y),
-
-        0xe6 => rdwr!(inc, cpu, m, zeropage),
-        0xf6 => rdwr!(inc, cpu, m, zeropage_x),
-        0xee => rdwr!(inc, cpu, m, absolute),
-        0xfe => rdwr!(inc, cpu, m, absolute_x),
-
-        0xe8 => cpu.inx(),
-        0xc8 => cpu.iny(),
-
-        // jmp
-        0x4c => cpu.pc = cpu.get_operand_word(),
-        0x6c => {
-            let addr = cpu.get_operand_word();
-            cpu.pc = cpu.read(addr) as u16 | (cpu.read(addr.wrapping_add(1)) as u16) << 8;
-        }
-
-        0x20 => {
-            let addr = cpu.get_operand_word();
-            cpu.jsr(addr);
-        }
-
-        0x60 => cpu.rts(),
-
-        0xa9 => rdonly!(lda, cpu, m, immediate),
-        0xa5 => rdonly!(lda, cpu, m, zeropage),
-        0xb5 => rdonly!(lda, cpu, m, zeropage_x),
-        0xad => rdonly!(lda, cpu, m, absolute),
-        0xbd => rdonly!(lda, cpu, m, absolute_x),
-        0xb9 => rdonly!(lda, cpu, m, absolute_y),
-        0xa1 => rdonly!(lda, cpu, m, indirect_x),
-        0xb1 => rdonly!(lda, cpu, m, indirect_y),
-
-        0xa2 => rdonly!(ldx, cpu, m, immediate),
-        0xa6 => rdonly!(ldx, cpu, m, zeropage),
-        0xb6 => rdonly!(ldx, cpu, m, zeropage_y),
-        0xae => rdonly!(ldx, cpu, m, absolute),
-        0xbe => rdonly!(ldx, cpu, m, absolute_y),
-
-        0xa0 => rdonly!(ldy, cpu, m, immediate),
-        0xa4 => rdonly!(ldy, cpu, m, zeropage),
-        0xb4 => rdonly!(ldy, cpu, m, zeropage_x),
-        0xac => rdonly!(ldy, cpu, m, absolute),
-        0xbc => rdonly!(ldy, cpu, m, absolute_x),
-
-        0x4a => rdwr!(lsr, cpu, m, accumulator),
-        0x46 => rdwr!(lsr, cpu, m, zeropage),
-        0x56 => rdwr!(lsr, cpu, m, zeropage_x),
-        0x4e => rdwr!(lsr, cpu, m, absolute),
-        0x5e => rdwr!(lsr, cpu, m, absolute_x),
-
-        0xea => (), // nop
-
-        0x09 => rdonly!(ora, cpu, m, immediate),
-        0x05 => rdonly!(ora, cpu, m, zeropage),
-        0x15 => rdonly!(ora, cpu, m, zeropage_x),
-        0x0d => rdonly!(ora, cpu, m, absolute),
-        0x1d => rdonly!(ora, cpu, m, absolute_x),
-        0x19 => rdonly!(ora, cpu, m, absolute_y),
-        0x01 => rdonly!(ora, cpu, m, indirect_x),
-        0x11 => rdonly!(ora, cpu, m, indirect_y),
-
-        // pha
-        0x48 => {
-            let value = cpu.a;
-            cpu.push(value);
-        }
-
-        // php
-        0x08 => {
-            let value = cpu.p;
-            cpu.push(value);
-        }
-
-        0x68 => cpu.a = cpu.pop(), // pla
-        0x28 => cpu.p = cpu.pop(), // plp
-
-        0x2a => rdwr!(rol, cpu, m, accumulator),
-        0x26 => rdwr!(rol, cpu, m, zeropage),
-        0x36 => rdwr!(rol, cpu, m, zeropage_x),
-        0x2e => rdwr!(rol, cpu, m, absolute),
-        0x3e => rdwr!(rol, cpu, m, absolute_x),
-
-        0x6a => rdwr!(ror, cpu, m, accumulator),
-        0x66 => rdwr!(ror, cpu, m, zeropage),
-        0x76 => rdwr!(ror, cpu, m, zeropage_x),
-        0x6e => rdwr!(ror, cpu, m, absolute),
-        0x7e => rdwr!(ror, cpu, m, absolute_x),
-
-        0xe9 => rdonly!(sbc, cpu, m, immediate),
-        0xe5 => rdonly!(sbc, cpu, m, zeropage),
-        0xf5 => rdonly!(sbc, cpu, m, zeropage_x),
-        0xed => rdonly!(sbc, cpu, m, absolute),
-        0xfd => rdonly!(sbc, cpu, m, absolute_x),
-        0xf9 => rdonly!(sbc, cpu, m, absolute_y),
-        0xe1 => rdonly!(sbc, cpu, m, indirect_x),
-        0xf1 => rdonly!(sbc, cpu, m, indirect_y),
-
-        0x38 => cpu.carry = true,     // sec
-        0xf8 => cpu.decimal = true,   // sed
-        0x78 => cpu.interrupt = true, // sei
-
-        0x85 => other!(sta, cpu, m, zeropage),
-        0x95 => other!(sta, cpu, m, zeropage_x),
-        0x8d => other!(sta, cpu, m, absolute),
-        0x9d => other!(sta, cpu, m, absolute_x),
-        0x99 => other!(sta, cpu, m, absolute_y),
-        0x81 => other!(sta, cpu, m, indirect_x),
-        0x91 => other!(sta, cpu, m, indirect_y),
-
-        0x86 => other!(stx, cpu, m, zeropage),
-        0x96 => other!(stx, cpu, m, zeropage_y),
-        0x8e => other!(stx, cpu, m, absolute),
-
-        0x84 => other!(sty, cpu, m, zeropage),
-        0x94 => other!(sty, cpu, m, zeropage_x),
-        0x8c => other!(sty, cpu, m, absolute),
-
-        0xaa => cpu.tax(),
-        0xa8 => cpu.tay(),
-        0xba => cpu.tsx(),
-        0x8a => cpu.txa(),
-        0x9a => cpu.txs(),
-        0x98 => cpu.tya(),
-
-        _ => panic!("unknown opcode {} addr pc={:x}", opcode, cpu.pc - 1)
+        let y = self.y;
+        self.set_zero_negative(y);
+        self.a = y;
     }
 
-    cpu.cycle_count += CYCLE_TABLE[opcode as usize] as usize;
-    cpu.cycle_count += CROSSPAGE_CYCLE_TABLE[opcode as usize] as usize;
+    /*
+    fn rti(&mut self) {
+        cpu.p = cpu.pop();
+        cpu.pc = cpu.pop_word() as u16;
+    }
+
+    fn rts(&mut self) {
+        let addr = cpu.pop_word() as u16;
+        let addr = addr.saturating_add(1);
+        cpu.pc = addr;
+    }
+    */
+
+    fn dispatch(&mut self) {
+        let opcode = self.read(self.pc);
+        match opcode {
+            0x69 => I!(self, adc, immediate),
+            0x65 => I!(self, adc, zeropage),
+            0x75 => I!(self, adc, zeropage_x),
+            0x6d => I!(self, adc, absolute),
+            0x7d => I!(self, adc, absolute_x),
+            0x79 => I!(self, adc, absolute_y),
+            0x61 => I!(self, adc, indexed_indirect),
+            0x71 => I!(self, adc, indirect_indexed),
+
+            0x29 => I!(self, and, immediate),
+            0x25 => I!(self, and, zeropage),
+            0x35 => I!(self, and, zeropage_x),
+            0x2d => I!(self, and, absolute),
+            0x3d => I!(self, and, absolute_x),
+            0x39 => I!(self, and, absolute_y),
+            0x21 => I!(self, and, indexed_indirect),
+            0x31 => I!(self, and, indirect_indexed),
+
+            0x0a => I!(self, asl, accumulator),
+            0x06 => I!(self, asl, zeropage),
+            0x16 => I!(self, asl, zeropage_x),
+            0x0e => I!(self, asl, absolute),
+            0x1e => I!(self, asl, absolute_x),
+
+            0x90 => I!(self, bcc, relative),
+            0xb0 => I!(self, bcs, relative),
+            0xf0 => I!(self, beq, relative),
+            0x30 => I!(self, bmi, relative),
+            0xd0 => I!(self, bne, relative),
+            0x10 => I!(self, bpl, relative),
+            0x50 => I!(self, bvc, relative),
+            0x70 => I!(self, bvs, relative),
+
+            0x24 => I!(self, bit, zeropage),
+            0x2c => I!(self, bit, absolute),
+
+            0x18 => self.clear_flag(CARRY),     // clc
+            0xd8 => self.clear_flag(DECIMAL),   // cld
+            0x58 => self.clear_flag(INTERRUPT), // cli
+            0xb8 => self.clear_flag(OVERFLOW),  // clv
+
+            0xc9 => I!(self, cmp, immediate),
+            0xc5 => I!(self, cmp, zeropage),
+            0xd5 => I!(self, cmp, zeropage_x),
+            0xcd => I!(self, cmp, absolute),
+            0xdd => I!(self, cmp, absolute_x),
+            0xd9 => I!(self, cmp, absolute_y),
+            0xc1 => I!(self, cmp, indexed_indirect),
+            0xd1 => I!(self, cmp, indirect_indexed),
+
+            0xe0 => I!(self, cpx, immediate),
+            0xe4 => I!(self, cpx, zeropage),
+            0xec => I!(self, cpx, absolute),
+
+            0xc0 => I!(self, cpy, immediate),
+            0xc4 => I!(self, cpy, zeropage),
+            0xcc => I!(self, cpy, absolute),
+
+            0xc6 => I!(self, dec, zeropage),
+            0xd6 => I!(self, dec, zeropage_x),
+            0xce => I!(self, dec, absolute),
+            0xde => I!(self, dec, absolute_x),
+
+            0xca => self.dex(),
+            0x88 => self.dey(),
+
+            0x49 => I!(self, eor, immediate),
+            0x45 => I!(self, eor, zeropage),
+            0x55 => I!(self, eor, zeropage_x),
+            0x4d => I!(self, eor, absolute),
+            0x5d => I!(self, eor, absolute_x),
+            0x59 => I!(self, eor, absolute_y),
+            0x41 => I!(self, eor, indexed_indirect),
+            0x51 => I!(self, eor, indirect_indexed),
+
+            0xe6 => I!(self, inc, zeropage),
+            0xf6 => I!(self, inc, zeropage_x),
+            0xee => I!(self, inc, absolute),
+            0xfe => I!(self, inc, absolute_x),
+
+            0xe8 => self.inx(),
+            0xc8 => self.iny(),
+
+            0x4c => I!(self, jmp, absolute),
+            0x6c => I!(self, jmp, indirect),
+    
+            0x20 => I!(self, jsr, absolute),
+    
+            0xa9 => I!(self, lda, immediate),
+            0xa5 => I!(self, lda, zeropage),
+            0xb5 => I!(self, lda, zeropage_x),
+            0xad => I!(self, lda, absolute),
+            0xbd => I!(self, lda, absolute_x),
+            0xb9 => I!(self, lda, absolute_y),
+            0xa1 => I!(self, lda, indexed_indirect),
+            0xb1 => I!(self, lda, indirect_indexed),
+
+            0xa2 => I!(self, ldx, immediate),
+            0xa6 => I!(self, ldx, zeropage),
+            0xb6 => I!(self, ldx, zeropage_y),
+            0xae => I!(self, ldx, absolute),
+            0xbe => I!(self, ldx, absolute_y),
+
+            0xa0 => I!(self, ldy, immediate),
+            0xa4 => I!(self, ldy, zeropage),
+            0xb4 => I!(self, ldy, zeropage_x),
+            0xac => I!(self, ldy, absolute),
+            0xbc => I!(self, ldy, absolute_x),
+
+            0x4a => I!(self, lsr, accumulator),
+            0x46 => I!(self, lsr, zeropage),
+            0x56 => I!(self, lsr, zeropage_x),
+            0x4e => I!(self, lsr, absolute),
+            0x5e => I!(self, lsr, absolute_x),
+
+            0xea => (), // nop
+
+            0x09 => I!(self, ora, immediate),
+            0x05 => I!(self, ora, zeropage),
+            0x15 => I!(self, ora, zeropage_x),
+            0x0d => I!(self, ora, absolute),
+            0x1d => I!(self, ora, absolute_x),
+            0x19 => I!(self, ora, absolute_y),
+            0x01 => I!(self, ora, indexed_indirect),
+            0x11 => I!(self, ora, indirect_indexed),
+
+            0x48 => { // pha
+                let a = self.a;
+                self.push(a);
+            }
+
+            0x08 => { // php
+                let p = self.p;
+                self.push(p);
+            }
+
+            0x68 => self.a = self.pop(), // pla
+            0x28 => self.p = self.pop(), // plp
+
+            0x2a => I!(self, rol, accumulator),
+            0x26 => I!(self, rol, zeropage),
+            0x36 => I!(self, rol, zeropage_x),
+            0x2e => I!(self, rol, absolute),
+            0x3e => I!(self, rol, absolute_x),
+
+            0x6a => I!(self, ror, accumulator),
+            0x66 => I!(self, ror, zeropage),
+            0x76 => I!(self, ror, zeropage_x),
+            0x6e => I!(self, ror, absolute),
+            0x7e => I!(self, ror, absolute_x),
+
+            0xe9 => I!(self, sbc, immediate),
+            0xe5 => I!(self, sbc, zeropage),
+            0xf5 => I!(self, sbc, zeropage_x),
+            0xed => I!(self, sbc, absolute),
+            0xfd => I!(self, sbc, absolute_x),
+            0xf9 => I!(self, sbc, absolute_y),
+            0xe1 => I!(self, sbc, indexed_indirect),
+            0xf1 => I!(self, sbc, indirect_indexed),
+
+            0x38 => self.set_flag(CARRY),     // sec
+            0xf8 => self.set_flag(DECIMAL),   // sed
+            0x78 => self.set_flag(INTERRUPT), // sei
+
+            0x85 => I!(self, sta, zeropage),
+            0x95 => I!(self, sta, zeropage_x),
+            0x8d => I!(self, sta, absolute),
+            0x9d => I!(self, sta, absolute_x),
+            0x99 => I!(self, sta, absolute_y),
+            0x81 => I!(self, sta, indexed_indirect),
+            0x91 => I!(self, sta, indirect_indexed),
+
+            0x86 => I!(self, stx, zeropage),
+            0x96 => I!(self, stx, zeropage_y),
+            0x8e => I!(self, stx, absolute),
+
+            0x84 => I!(self, sty, zeropage),
+            0x94 => I!(self, sty, zeropage_x),
+            0x8c => I!(self, sty, absolute),
+
+            0xaa => self.tax(),
+            0xa8 => self.tay(),
+            0xba => self.tsx(),
+            0x8a => self.txa(),
+            0x9a => self.txs(),
+            0x98 => self.tya(),
+
+            /*
+            0x60 => self.rts(),
+            */
+
+            _ => panic!("unknown opcode {} pc={:x}", opcode, self.pc)
+        }
+    }
 }
