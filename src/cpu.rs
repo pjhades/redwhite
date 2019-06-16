@@ -140,17 +140,19 @@ impl Cpu {
     }
 
     #[inline(always)]
-    fn flag_on(&self, flag: u8) -> bool {
-        self.p & flag != 0
+    fn update_flag(&mut self, flag: u8, cond: bool) {
+        self.set_flag(if cond { flag } else { !flag });
     }
 
-    fn set_zero_negative(&mut self, value: u8) {
-        if value == 0 {
-            self.set_flag(ZERO);
-        }
-        if value & 0x80 != 0 {
-            self.set_flag(NEGATIVE);
-        }
+    #[inline(always)]
+    fn update_zero_negative(&mut self, value: u8) {
+        self.update_flag(ZERO, value == 0);
+        self.update_flag(NEGATIVE, value & 0x80 != 0);
+    }
+
+    #[inline(always)]
+    fn flag_on(&self, flag: u8) -> bool {
+        self.p & flag != 0
     }
 
     // XXX check pc increment, do it here
@@ -251,32 +253,27 @@ impl Cpu {
         let mut sum = operand as u16 +
                       self.a as u16 +
                       if self.flag_on(CARRY) { 1 } else { 0 };
-        if sum > 0xff {
-            self.set_flag(CARRY);
-        }
+        self.update_flag(CARRY, sum > 0xff);
         let result = sum as u8;
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         let a = self.a;
-        if (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0 {
-            self.set_flag(OVERFLOW);
-        }
+        let cond = (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0;
+        self.update_flag(OVERFLOW, cond);
         self.a = result;
     }
 
     fn and<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = operand & self.a;
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         self.a = result;
     }
 
     fn asl<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
-        if operand & 0x80 != 0 {
-            self.set_flag(CARRY);
-        }
+        self.update_flag(CARRY, operand & 0x80 != 0);
         let result = operand << 1;
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         mode.writeback(self, result);
     }
 
@@ -322,89 +319,75 @@ impl Cpu {
 
     fn bit<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
-        if operand & 0x80 != 0 {
-            self.set_flag(NEGATIVE);
-        }
-        if operand & 0x40 != 0 {
-            self.set_flag(OVERFLOW);
-        }
-        if operand & self.a == 0 {
-            self.set_flag(ZERO);
-        }
-        else {
-            self.clear_flag(ZERO);
-        }
+        self.update_flag(NEGATIVE, operand & 0x80 != 0);
+        self.update_flag(OVERFLOW, operand & 0x40 != 0);
+        let cond = operand & self.a == 0;
+        self.update_flag(ZERO, cond);
     }
 
     fn cmp<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = self.a as i8 - operand as i8;
-        if result >= 0 {
-            self.set_flag(CARRY);
-        }
-        self.set_zero_negative(result as u8);
+        self.update_flag(CARRY, result >= 0);
+        self.update_zero_negative(result as u8);
     }
 
     fn cpx<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = self.x as i8 - operand as i8;
-        if result >= 0 {
-            self.set_flag(CARRY);
-        }
-        self.set_zero_negative(result as u8);
+        self.update_flag(CARRY, result >= 0);
+        self.update_zero_negative(result as u8);
     }
 
     fn cpy<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = self.y as i8 - operand as i8;
-        if result >= 0 {
-            self.set_flag(CARRY);
-        }
-        self.set_zero_negative(result as u8);
+        self.update_flag(CARRY, result >= 0);
+        self.update_zero_negative(result as u8);
     }
 
     fn dec<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = operand.wrapping_sub(1);
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         mode.writeback(self, result);
     }
 
     fn dex(&mut self) {
         let result = self.x.wrapping_sub(1);
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         self.x = result;
     }
 
     fn dey(&mut self) {
         let result = self.y.wrapping_sub(1);
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         self.y = result;
     }
 
     fn eor<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = self.a ^ operand;
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         self.a = result;
     }
 
     fn inc<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = operand.wrapping_add(1);
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         mode.writeback(self, result);
     }
 
     fn inx(&mut self) {
         let result = self.x.wrapping_add(1);
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         self.x = result;
     }
 
     fn iny(&mut self) {
         let result = self.y.wrapping_add(1);
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         self.y = result;
     }
 
@@ -421,36 +404,34 @@ impl Cpu {
 
     fn lda<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
-        self.set_zero_negative(operand);
+        self.update_zero_negative(operand);
         self.a = operand;
     }
 
     fn ldx<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
-        self.set_zero_negative(operand);
+        self.update_zero_negative(operand);
         self.x = operand;
     }
 
     fn ldy<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
-        self.set_zero_negative(operand);
+        self.update_zero_negative(operand);
         self.y = operand;
     }
 
     fn lsr<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
-        if operand & 0x1 != 0 {
-            self.set_flag(CARRY);
-        }
+        self.update_flag(CARRY, operand & 0x1 != 0);
         let result = operand >> 1;
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         mode.writeback(self, result);
     }
 
     fn ora<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = operand | self.a;
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         self.a = result;
     }
 
@@ -460,11 +441,9 @@ impl Cpu {
         if self.flag_on(CARRY) {
             shift |= 0x1;
         }
-        if shift > 0x00ff {
-            self.set_flag(CARRY);
-        }
+        self.update_flag(CARRY, shift > 0xff);
         let result = shift as u8;
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         mode.writeback(self, result);
     }
 
@@ -474,11 +453,9 @@ impl Cpu {
         if self.flag_on(CARRY) {
             shift |= 0x0100;
         }
-        if shift & 0x0001 != 0 {
-            self.set_flag(CARRY);
-        }
+        self.update_flag(CARRY, shift & 0x1 != 0);
         let result = (shift >> 1) as u8;
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         mode.writeback(self, result);
     }
 
@@ -487,15 +464,12 @@ impl Cpu {
         let diff = self.a as u16 -
                    operand as u16 -
                    if self.flag_on(CARRY) { 0 } else { 1 };
-        if diff < 0x0100 {
-            self.set_flag(CARRY);
-        }
+        self.update_flag(CARRY, diff < 0x100);
         let result = diff as u8;
-        self.set_zero_negative(result);
+        self.update_zero_negative(result);
         let a = self.a;
-        if (a ^ result) & 0x80 != 0 && (a ^ operand) & 0x80 != 0 {
-            self.set_flag(OVERFLOW);
-        }
+        let cond = (a ^ result) & 0x80 != 0 && (a ^ operand) & 0x80 != 0;
+        self.update_flag(OVERFLOW, cond);
         self.a = result;
     }
 
@@ -519,43 +493,43 @@ impl Cpu {
 
     fn tax(&mut self) {
         let a = self.a;
-        self.set_zero_negative(a);
+        self.update_zero_negative(a);
         self.x = a;
     }
 
     fn tay(&mut self) {
         let a = self.a;
-        self.set_zero_negative(a);
+        self.update_zero_negative(a);
         self.y = a;
     }
 
     fn tsx(&mut self) {
         let sp = self.sp;
-        self.set_zero_negative(sp);
+        self.update_zero_negative(sp);
         self.x = sp;
     }
 
     fn tsy(&mut self) {
         let sp = self.sp;
-        self.set_zero_negative(sp);
+        self.update_zero_negative(sp);
         self.y = sp;
     }
 
     fn txa(&mut self) {
         let x = self.x;
-        self.set_zero_negative(x);
+        self.update_zero_negative(x);
         self.a = x;
     }
 
     fn txs(&mut self) {
         let x = self.x;
-        self.set_zero_negative(x);
+        self.update_zero_negative(x);
         self.sp = x;
     }
 
     fn tya(&mut self) {
         let y = self.y;
-        self.set_zero_negative(y);
+        self.update_zero_negative(y);
         self.a = y;
     }
 
