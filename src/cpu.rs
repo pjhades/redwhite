@@ -682,7 +682,8 @@ impl Cpu {
 
             0x08 => { // php
                 let p = self.p;
-                self.push(p);
+                // PHP always pushes Break flag as 1
+                self.push(p | BREAK);
             }
 
             0x68 => self.a = self.pop(), // pla
