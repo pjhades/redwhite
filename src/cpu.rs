@@ -72,7 +72,7 @@ impl Access for Cpu {
 }
 
 trait Addressing {
-    fn address(&self, cpu: &Cpu) -> u8;
+    fn address(&self, cpu: &mut Cpu) -> u8;
     fn writeback(&self, _cpu: &mut Cpu, _value: u8) {}
 }
 
@@ -81,13 +81,13 @@ struct Accumulator;
 struct FromMemory { addr: u16 }
 
 impl Addressing for Immediate {
-    fn address(&self, cpu: &Cpu) -> u8 {
+    fn address(&self, cpu: &mut Cpu) -> u8 {
         cpu.read_at_pc()
     }
 }
 
 impl Addressing for Accumulator {
-    fn address(&self, cpu: &Cpu) -> u8 {
+    fn address(&self, cpu: &mut Cpu) -> u8 {
         cpu.a
     }
 
@@ -97,7 +97,7 @@ impl Addressing for Accumulator {
 }
 
 impl Addressing for FromMemory {
-    fn address(&self, cpu: &Cpu) -> u8 {
+    fn address(&self, cpu: &mut Cpu) -> u8 {
         cpu.read(self.addr)
     }
 
@@ -155,15 +155,16 @@ impl Cpu {
         self.p & flag != 0
     }
 
-    // XXX check pc increment, do it here
-    fn read_at_pc(&self) -> u8 {
-        let addr = self.pc.wrapping_add(1);
-        self.read(addr)
+    fn read_at_pc(&mut self) -> u8 {
+        let value = self.read(self.pc);
+        self.pc += 1;
+        value
     }
 
-    fn read16_at_pc(&self) -> u16 {
-        let addr = self.pc.wrapping_add(1);
-        self.read16(addr)
+    fn read16_at_pc(&mut self) -> u16 {
+        let value = self.read16(self.pc);
+        self.pc += 2;
+        value
     }
 
     fn push(&mut self, value: u8) {
@@ -204,47 +205,49 @@ impl Cpu {
         Accumulator {}
     }
 
-    fn zeropage(&self) -> FromMemory {
+    fn zeropage(&mut self) -> FromMemory {
         FromMemory { addr: self.read_at_pc() as u16 }
     }
 
-    fn zeropage_x(&self) -> FromMemory {
+    fn zeropage_x(&mut self) -> FromMemory {
         FromMemory { addr: self.read_at_pc().wrapping_add(self.x) as u16 }
     }
 
-    fn zeropage_y(&self) -> FromMemory {
+    fn zeropage_y(&mut self) -> FromMemory {
         FromMemory { addr: self.read_at_pc().wrapping_add(self.y) as u16 }
     }
 
-    fn absolute(&self) -> FromMemory {
+    fn absolute(&mut self) -> FromMemory {
         FromMemory { addr: self.read16_at_pc() }
     }
 
-    fn absolute_x(&self) -> FromMemory {
+    fn absolute_x(&mut self) -> FromMemory {
         FromMemory { addr: self.read16_at_pc() + self.x as u16 }
     }
 
-    fn absolute_y(&self) -> FromMemory {
+    fn absolute_y(&mut self) -> FromMemory {
         FromMemory { addr: self.read16_at_pc() + self.y as u16 }
     }
 
-    fn indirect(&self) -> FromMemory {
-        FromMemory { addr: self.read16_wrapped(self.read16_at_pc()) }
+    fn indirect(&mut self) -> FromMemory {
+        let a = self.read16_at_pc();
+        FromMemory { addr: self.read16_wrapped(a) }
     }
 
-    fn indexed_indirect(&self) -> FromMemory {
-        let base = self.read_at_pc().wrapping_add(self.x);
-        FromMemory { addr: self.read16_wrapped(base as u16) }
+    fn indexed_indirect(&mut self) -> FromMemory {
+        let a = self.read_at_pc().wrapping_add(self.x);
+        FromMemory { addr: self.read16_wrapped(a as u16) }
     }
 
-    fn indirect_indexed(&self) -> FromMemory {
-        let v = self.read16_wrapped(self.read_at_pc() as u16);
+    fn indirect_indexed(&mut self) -> FromMemory {
+        let a = self.read_at_pc();
+        let v = self.read16_wrapped(a as u16);
         FromMemory { addr: v + self.y as u16 }
     }
 
-    fn relative(&self) -> FromMemory {
+    fn relative(&mut self) -> FromMemory {
         let offset = self.read_at_pc();
-        FromMemory { addr: (self.pc as i16).wrapping_add(offset as i8 as i16) as u16 }
+        FromMemory { addr: ((self.pc as i16) + (offset as i8 as i16)) as u16 }
     }
 
     // instructions
@@ -459,6 +462,10 @@ impl Cpu {
         mode.writeback(self, result);
     }
 
+    fn rts(&mut self) {
+        self.pc = self.pop16() + 1;
+    }
+
     fn sbc<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let diff = self.a as u16 -
@@ -538,16 +545,10 @@ impl Cpu {
         cpu.p = cpu.pop();
         cpu.pc = cpu.pop_word() as u16;
     }
-
-    fn rts(&mut self) {
-        let addr = cpu.pop_word() as u16;
-        let addr = addr.saturating_add(1);
-        cpu.pc = addr;
-    }
     */
 
     fn dispatch(&mut self) {
-        let opcode = self.read(self.pc);
+        let opcode = self.read_at_pc();
         match opcode {
             0x69 => I!(self, adc, immediate),
             0x65 => I!(self, adc, zeropage),
@@ -701,6 +702,8 @@ impl Cpu {
             0x6e => I!(self, ror, absolute),
             0x7e => I!(self, ror, absolute_x),
 
+            0x60 => self.rts(),
+
             0xe9 => I!(self, sbc, immediate),
             0xe5 => I!(self, sbc, zeropage),
             0xf5 => I!(self, sbc, zeropage_x),
@@ -736,10 +739,6 @@ impl Cpu {
             0x8a => self.txa(),
             0x9a => self.txs(),
             0x98 => self.tya(),
-
-            /*
-            0x60 => self.rts(),
-            */
 
             _ => panic!("unknown opcode {} pc={:x}", opcode, self.pc)
         }
