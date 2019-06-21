@@ -1,6 +1,6 @@
 use mem::{Memory, Access};
 
-const CYCLES: [u8;256] = [
+const CYCLES: [usize;256] = [
     //       0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
     /* 0 */  7, 6, 0, 0, 0, 3, 5, 0, 3, 2, 2, 0, 0, 4, 6, 0,
     /* 1 */  2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
@@ -20,7 +20,7 @@ const CYCLES: [u8;256] = [
     /* f */  2, 5, 0, 0, 0, 4, 6, 0, 2, 4, 0, 0, 0, 4, 7, 0,
 ];
 
-const XPAGE_CYCLES: [u8;256] = [
+const XPAGE_CYCLES: [usize;256] = [
     //       0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
     /* 0 */  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     /* 1 */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
@@ -58,7 +58,8 @@ pub struct Cpu {
     p:  u8,
     pc: u16,
     mem: Memory,
-    cycle_count: usize,
+    cycles: usize,
+    check_xpage: bool,
 }
 
 impl Access for Cpu {
@@ -125,7 +126,8 @@ impl Cpu {
             pc: 0,
             p:  0x34,
             mem: Memory::new(),
-            cycle_count: 0,
+            cycles: 0,
+            check_xpage: false,
         }
     }
 
@@ -189,9 +191,18 @@ impl Cpu {
         value
     }
 
+    fn page_crossed(&self, addr1: u16, addr2: u16) -> bool {
+        addr1 & 0xff00 != addr2 & 0xff00
+    }
+
     fn jump_on_cond(&mut self, addr: u16, condition: bool) {
         if condition {
-            self.cycle_count += 1;
+            // +1 cycle if branch is taken
+            self.cycles += 1;
+            // +1 cycle if branching across page boundary
+            if self.page_crossed(self.pc, addr) {
+                self.cycles += 1;
+            }
             self.pc = addr;
         }
     }
@@ -222,11 +233,17 @@ impl Cpu {
     }
 
     fn absolute_x(&mut self) -> FromMemory {
-        FromMemory { addr: self.read16_at_pc() + self.x as u16 }
+        let pc = self.pc;
+        let addr = self.read16_at_pc() + self.x as u16;
+        self.check_xpage = self.page_crossed(pc, addr);
+        FromMemory { addr }
     }
 
     fn absolute_y(&mut self) -> FromMemory {
-        FromMemory { addr: self.read16_at_pc() + self.y as u16 }
+        let pc = self.pc;
+        let addr = self.read16_at_pc() + self.y as u16;
+        self.check_xpage = self.page_crossed(pc, addr);
+        FromMemory { addr }
     }
 
     fn indirect(&mut self) -> FromMemory {
@@ -242,7 +259,9 @@ impl Cpu {
     fn indirect_indexed(&mut self) -> FromMemory {
         let a = self.read_at_pc();
         let v = self.read16_wrapped(a as u16);
-        FromMemory { addr: v + self.y as u16 }
+        let addr = v + self.y as u16;
+        self.check_xpage = self.page_crossed(v, addr);
+        FromMemory { addr }
     }
 
     fn relative(&mut self) -> FromMemory {
@@ -741,6 +760,11 @@ impl Cpu {
             0x98 => self.tya(),
 
             _ => panic!("unknown opcode {} pc={:x}", opcode, self.pc)
+        }
+
+        self.cycles += CYCLES[opcode as usize];
+        if self.check_xpage {
+            self.cycles += XPAGE_CYCLES[opcode as usize];
         }
     }
 }
