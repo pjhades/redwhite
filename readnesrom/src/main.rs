@@ -50,7 +50,8 @@ fn draw_tile_at(tile: &Tile, x: i32, y: i32, canvas: &mut WindowCanvas, pal: &[C
 
 // Draw each pattern table in a 16 tile x 32 tile grid.
 fn dump_table(tiles: &Vec<Tile>, table_id: usize, canvas: &mut WindowCanvas, pal: &[Color;4]) -> Result<(), Error> {
-    let table = tiles.chunks(PATTAB_TILES).nth(table_id).unwrap();
+    let table = tiles.chunks(PATTAB_TILES).nth(table_id)
+                .ok_or(Error::new("invalid pattern table".to_string()))?;
     let rightx = (16 * TILE_SIZE_PX * PX_SCALE) as i32;
     let mut y = 0;
 
