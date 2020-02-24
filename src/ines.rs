@@ -7,18 +7,18 @@ use error::{Error, ResultContext};
 
 #[derive(Debug)]
 pub struct Header {
-    n_prgrom: u8, // size of PRG ROM in 16 KB units
-    n_chrrom: u8, // size of CHR ROM in 8 KB units
+    pub n_prgrom: u8, // size of PRG ROM in 16 KB units
+    pub n_chrrom: u8, // size of CHR ROM in 8 KB units
     flag6: u8,
     flag7: u8,
-    n_prgram: u8, // size of PRG RAM in 8 KB units
+    pub n_prgram: u8, // size of PRG RAM in 8 KB units
     flag9: u8,
     flag10: u8,
 }
 
 #[derive(Debug)]
 pub struct Ines {
-    header: Header,
+    pub header: Header,
     pub prgrom: Vec<u8>,
     pub chrrom: Vec<u8>,
 }

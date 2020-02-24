@@ -6,8 +6,10 @@ pub mod ines;
 pub mod error;
 pub mod palette;
 
-pub const PIXEL_UNIT: usize = 4;
+pub const PX_SCALE: usize = 3;
 // Each tile is a 8x8 grid of pixels.
-pub const TILESIZE: usize = 8;
-// The color of each pixel is described with 4 bits.
-pub type Tile = [u32;TILESIZE];
+pub const TILE_SIZE_PX: usize = 8;
+// The color of each pixel is described by 4 bits.
+pub type Tile = [u32;TILE_SIZE_PX];
+// Pattern table size in tiles
+pub const PATTAB_TILES: usize = 512;
