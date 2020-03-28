@@ -3,7 +3,7 @@
 use std::fs::File;
 use std::path::Path;
 use std::io::Read;
-use error::{Error, ResultContext};
+use error::Error;
 
 #[derive(Debug)]
 pub struct Header {

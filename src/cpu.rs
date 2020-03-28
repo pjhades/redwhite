@@ -1,4 +1,5 @@
-use mem::{Memory, Access};
+use mem::Access;
+use ppu::Ppu;
 
 const CYCLES: [usize;256] = [
     //       0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
@@ -57,18 +58,35 @@ pub struct Cpu {
     sp: u8,
     p:  u8,
     pc: u16,
-    mem: Memory,
+    ram: [u8; 0x800],
+    ppu: Ppu,
     cycles: usize,
     check_xpage: bool,
 }
 
 impl Access for Cpu {
     fn read(&self, addr: u16) -> u8 {
-        self.mem.read(addr)
+        if addr < 0x2000 {
+            self.ram[(addr & 0x07ff) as usize]
+        }
+        else if addr < 0x4000 {
+            self.ppu.read_reg(addr & 0x2007)
+        }
+        else {
+            panic!("reading other memory sections is not implemented yet!");
+        }
     }
 
     fn write(&mut self, addr: u16, value: u8) {
-        self.mem.write(addr, value)
+        if addr < 0x2000 {
+            self.ram[(addr & 0x07ff) as usize] = value;
+        }
+        else if addr < 0x4000 {
+            self.ppu.write_reg(addr & 0x2007, value);
+        }
+        else {
+            panic!("writing other memory sections is not implemented yet!");
+        }
     }
 }
 
@@ -116,8 +134,8 @@ macro_rules! inst {
 
 impl Cpu {
     pub fn new() -> Self {
-        // Set power-up state
-        // Ref: https://wiki.nesdev.com/w/index.php/CPU_power_up_state
+        // CPU power-up state
+        // https://wiki.nesdev.com/w/index.php/CPU_power_up_state
         Cpu {
             a:  0,
             x:  0,
@@ -125,7 +143,8 @@ impl Cpu {
             sp: 0xfd,
             pc: 0,
             p:  0x34,
-            mem: Memory::new(),
+            ram: [0; 0x800],
+            ppu: Ppu::new(),
             cycles: 0,
             check_xpage: false,
         }
