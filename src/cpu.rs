@@ -43,7 +43,7 @@ const XPAGE_CYCLES: [usize;256] = [
 // status flags
 const NEGATIVE:  u8 = 0b1000_0000;
 const OVERFLOW:  u8 = 0b0100_0000;
-const XFLAG:     u8 = 0b0010_0000;
+const UNKNOWN:   u8 = 0b0010_0000;
 const BREAK:     u8 = 0b0001_0000;
 const DECIMAL:   u8 = 0b0000_1000;
 const INTERRUPT: u8 = 0b0000_0100;
@@ -195,7 +195,7 @@ impl Cpu {
         addr1 & 0xff00 != addr2 & 0xff00
     }
 
-    fn jump_on_cond(&mut self, addr: u16, condition: bool) {
+    fn jump(&mut self, addr: u16, condition: bool) {
         if condition {
             // +1 cycle if branch is taken
             self.cycles += 1;
@@ -234,14 +234,14 @@ impl Cpu {
 
     fn absolute_x(&mut self) -> FromMemory {
         let pc = self.pc;
-        let addr = self.read16_at_pc() + self.x as u16;
+        let addr = self.read16_at_pc().wrapping_add(self.x as u16);
         self.check_xpage = self.page_crossed(pc, addr);
         FromMemory { addr }
     }
 
     fn absolute_y(&mut self) -> FromMemory {
         let pc = self.pc;
-        let addr = self.read16_at_pc() + self.y as u16;
+        let addr = self.read16_at_pc().wrapping_add(self.y as u16);
         self.check_xpage = self.page_crossed(pc, addr);
         FromMemory { addr }
     }
@@ -259,14 +259,14 @@ impl Cpu {
     fn indirect_indexed(&mut self) -> FromMemory {
         let a = self.read_at_pc();
         let v = self.read16_wrapped(a as u16);
-        let addr = v + self.y as u16;
+        let addr = v.wrapping_add(self.y as u16);
         self.check_xpage = self.page_crossed(v, addr);
         FromMemory { addr }
     }
 
     fn relative(&mut self) -> FromMemory {
         let offset = self.read_at_pc();
-        FromMemory { addr: ((self.pc as i16) + (offset as i8 as i16)) as u16 }
+        FromMemory { addr: ((self.pc as i16) + (offset as i16)) as u16 }
     }
 
     // instructions
@@ -301,42 +301,42 @@ impl Cpu {
 
     fn bcc(&mut self, mode: FromMemory) {
         let cond = !self.flag_on(CARRY);
-        self.jump_on_cond(mode.addr, cond);
+        self.jump(mode.addr, cond);
     }
 
     fn bcs(&mut self, mode: FromMemory) {
         let cond = self.flag_on(CARRY);
-        self.jump_on_cond(mode.addr, cond);
+        self.jump(mode.addr, cond);
     }
 
     fn beq(&mut self, mode: FromMemory) {
         let cond = self.flag_on(ZERO);
-        self.jump_on_cond(mode.addr, cond);
+        self.jump(mode.addr, cond);
     }
 
     fn bmi(&mut self, mode: FromMemory) {
         let cond = self.flag_on(NEGATIVE);
-        self.jump_on_cond(mode.addr, cond);
+        self.jump(mode.addr, cond);
     }
 
     fn bne(&mut self, mode: FromMemory) {
         let cond = !self.flag_on(ZERO);
-        self.jump_on_cond(mode.addr, cond);
+        self.jump(mode.addr, cond);
     }
 
     fn bpl(&mut self, mode: FromMemory) {
         let cond = !self.flag_on(NEGATIVE);
-        self.jump_on_cond(mode.addr, cond);
+        self.jump(mode.addr, cond);
     }
 
     fn bvc(&mut self, mode: FromMemory) {
         let cond = !self.flag_on(OVERFLOW);
-        self.jump_on_cond(mode.addr, cond);
+        self.jump(mode.addr, cond);
     }
 
     fn bvs(&mut self, mode: FromMemory) {
         let cond = self.flag_on(OVERFLOW);
-        self.jump_on_cond(mode.addr, cond);
+        self.jump(mode.addr, cond);
     }
 
     fn bit<T: Addressing>(&mut self, mode: T) {
