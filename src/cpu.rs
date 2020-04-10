@@ -1,4 +1,5 @@
 use memory::{Access, CpuMem};
+use std::ops::Deref;
 
 const CYCLES: [usize;256] = [
     //       0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
@@ -40,23 +41,49 @@ const XPAGE_CYCLES: [usize;256] = [
     /* f */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
 ];
 
-// status flags
-// XXX this looks disgusting
-const NEGATIVE:  u8 = 0b1000_0000;
-const OVERFLOW:  u8 = 0b0100_0000;
-const UNKNOWN:   u8 = 0b0010_0000;
-const BREAK:     u8 = 0b0001_0000;
-const DECIMAL:   u8 = 0b0000_1000;
-const INTERRUPT: u8 = 0b0000_0100;
-const ZERO:      u8 = 0b0000_0010;
-const CARRY:     u8 = 0b0000_0001;
+struct Status {
+    pub negative: bool,
+    pub overflow: bool,
+    pub unused: bool,
+    pub brk: bool,
+    pub decimal: bool,
+    pub interrupt: bool,
+    pub zero: bool,
+    pub carry: bool,
+}
+
+impl Status {
+    fn new(value: u8) -> Self {
+        Status {
+            negative:  value & 0x80 != 0,
+            overflow:  value & 0x40 != 0,
+            unused:    value & 0x20 != 0,
+            brk:       value & 0x10 != 0,
+            decimal:   value & 0x08 != 0,
+            interrupt: value & 0x04 != 0,
+            zero:      value & 0x02 != 0,
+            carry:     value & 0x01 != 0,
+        }
+    }
+
+    fn as_byte(&self) -> u8 {
+        (self.negative as u8)  << 7 |
+        (self.overflow as u8)  << 6 |
+        (self.unused as u8)    << 5 |
+        (self.brk as u8)       << 4 |
+        (self.decimal as u8)   << 3 |
+        (self.interrupt as u8) << 2 |
+        (self.zero as u8)      << 1 |
+        (self.carry as u8)
+    }
+}
 
 pub struct Cpu {
     a:  u8,
     x:  u8,
     y:  u8,
     sp: u8,
-    p:  u8,
+    p: Status,
     pc: u16,
     mem: CpuMem,
     cycles: usize,
@@ -130,7 +157,7 @@ impl Cpu {
             y:  0,
             sp: 0xfd,
             pc: 0,
-            p:  0x34,
+            p:  Status::new(0x34),
             mem: CpuMem::new(),
             cycles: 0,
             check_xpage: false,
@@ -138,29 +165,9 @@ impl Cpu {
     }
 
     #[inline(always)]
-    fn set_flag(&mut self, flag: u8) {
-        self.p |= flag;
-    }
-
-    #[inline(always)]
-    fn clear_flag(&mut self, flag: u8) {
-        self.p &= !flag;
-    }
-
-    #[inline(always)]
-    fn update_flag(&mut self, flag: u8, cond: bool) {
-        self.set_flag(if cond { flag } else { !flag });
-    }
-
-    #[inline(always)]
     fn update_zero_negative(&mut self, value: u8) {
-        self.update_flag(ZERO, value == 0);
-        self.update_flag(NEGATIVE, value & 0x80 != 0);
-    }
-
-    #[inline(always)]
-    fn flag_on(&self, flag: u8) -> bool {
-        self.p & flag != 0
+        self.p.zero = value == 0;
+        self.p.negative = value & 0x80 != 0;
     }
 
     fn read_at_pc(&mut self) -> u8 {
@@ -280,14 +287,13 @@ impl Cpu {
         let operand = mode.address(self);
         let mut sum = operand as u16 +
                       self.a as u16 +
-                      // XXX simplify this
-                      if self.flag_on(CARRY) { 1 } else { 0 };
-        self.update_flag(CARRY, sum > 0xff);
+                      self.p.carry as u16;
+        self.p.carry = sum > 0xff;
         let result = sum as u8;
         self.update_zero_negative(result);
         let a = self.a;
-        let cond = (a ^ operand) & 0x80 == 0 && (a ^ result) & 0x80 != 0;
-        self.update_flag(OVERFLOW, cond);
+        let cond = ((a ^ operand) & 0x80 == 0) && ((a ^ result) & 0x80 != 0);
+        self.p.overflow = cond;
         self.a = result;
     }
 
@@ -300,78 +306,77 @@ impl Cpu {
 
     fn asl<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
-        self.update_flag(CARRY, operand & 0x80 != 0);
+        self.p.carry = operand & 0x80 != 0;
         let result = operand << 1;
         self.update_zero_negative(result);
         mode.writeback(self, result);
     }
 
+    #[inline(always)]
     fn bcc(&mut self, mode: FromMemory) {
-        let cond = !self.flag_on(CARRY);
-        self.jump(mode.addr, cond);
+        self.jump(mode.addr, !self.p.carry);
     }
 
+    #[inline(always)]
     fn bcs(&mut self, mode: FromMemory) {
-        let cond = self.flag_on(CARRY);
-        self.jump(mode.addr, cond);
+        self.jump(mode.addr, self.p.carry);
     }
 
+    #[inline(always)]
     fn beq(&mut self, mode: FromMemory) {
-        let cond = self.flag_on(ZERO);
-        self.jump(mode.addr, cond);
+        self.jump(mode.addr, self.p.zero);
     }
 
+    #[inline(always)]
     fn bmi(&mut self, mode: FromMemory) {
-        let cond = self.flag_on(NEGATIVE);
-        self.jump(mode.addr, cond);
+        self.jump(mode.addr, self.p.negative);
     }
 
+    #[inline(always)]
     fn bne(&mut self, mode: FromMemory) {
-        let cond = !self.flag_on(ZERO);
-        self.jump(mode.addr, cond);
+        self.jump(mode.addr, !self.p.zero);
     }
 
+    #[inline(always)]
     fn bpl(&mut self, mode: FromMemory) {
-        let cond = !self.flag_on(NEGATIVE);
-        self.jump(mode.addr, cond);
+        self.jump(mode.addr, !self.p.negative);
     }
 
+    #[inline(always)]
     fn bvc(&mut self, mode: FromMemory) {
-        let cond = !self.flag_on(OVERFLOW);
-        self.jump(mode.addr, cond);
+        self.jump(mode.addr, !self.p.overflow);
     }
 
+    #[inline(always)]
     fn bvs(&mut self, mode: FromMemory) {
-        let cond = self.flag_on(OVERFLOW);
-        self.jump(mode.addr, cond);
+        self.jump(mode.addr, self.p.overflow);
     }
 
     fn bit<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
-        self.update_flag(NEGATIVE, operand & 0x80 != 0);
-        self.update_flag(OVERFLOW, operand & 0x40 != 0);
-        let cond = operand & self.a == 0;
-        self.update_flag(ZERO, cond);
+        self.p.negative = operand & 0x80 != 0;
+        self.p.overflow = operand & 0x40 != 0;
+        self.p.zero = operand & self.a == 0;
     }
 
     fn cmp<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = self.a as i8 - operand as i8;
-        self.update_flag(CARRY, result >= 0);
+        self.p.carry = result >= 0;
         self.update_zero_negative(result as u8);
     }
 
     fn cpx<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = self.x as i8 - operand as i8;
-        self.update_flag(CARRY, result >= 0);
+        self.p.carry = result >= 0;
         self.update_zero_negative(result as u8);
     }
 
     fn cpy<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = self.y as i8 - operand as i8;
-        self.update_flag(CARRY, result >= 0);
+        self.p.carry = result >= 0;
         self.update_zero_negative(result as u8);
     }
 
@@ -451,7 +456,7 @@ impl Cpu {
 
     fn lsr<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
-        self.update_flag(CARRY, operand & 0x1 != 0);
+        self.p.carry = operand & 0x1 != 0;
         let result = operand >> 1;
         self.update_zero_negative(result);
         mode.writeback(self, result);
@@ -467,10 +472,8 @@ impl Cpu {
     fn rol<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let mut shift = (operand as u16) << 1;
-        if self.flag_on(CARRY) {
-            shift |= 0x1;
-        }
-        self.update_flag(CARRY, shift > 0xff);
+        shift |= self.p.carry as u16;
+        self.p.carry = shift > 0xff;
         let result = shift as u8;
         self.update_zero_negative(result);
         mode.writeback(self, result);
@@ -479,10 +482,8 @@ impl Cpu {
     fn ror<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let mut shift = operand as u16;
-        if self.flag_on(CARRY) {
-            shift |= 0x0100;
-        }
-        self.update_flag(CARRY, shift & 0x1 != 0);
+        shift |= (self.p.carry as u16) << 8;
+        self.p.carry = shift & 0x1 != 0;
         let result = (shift >> 1) as u8;
         self.update_zero_negative(result);
         mode.writeback(self, result);
@@ -496,13 +497,13 @@ impl Cpu {
         let operand = mode.address(self);
         let diff = self.a as u16 -
                    operand as u16 -
-                   if self.flag_on(CARRY) { 0 } else { 1 };
-        self.update_flag(CARRY, diff < 0x100);
+                   !self.p.carry as u16;
+        self.p.carry = diff < 0x100;
         let result = diff as u8;
         self.update_zero_negative(result);
         let a = self.a;
-        let cond = (a ^ result) & 0x80 != 0 && (a ^ operand) & 0x80 != 0;
-        self.update_flag(OVERFLOW, cond);
+        let cond = ((a ^ result) & 0x80 != 0) && ((a ^ operand) & 0x80 != 0);
+        self.p.overflow = cond;
         self.a = result;
     }
 
@@ -626,10 +627,10 @@ impl Cpu {
             0x24 => inst!(self, bit, zeropage),
             0x2c => inst!(self, bit, absolute),
 
-            0x18 => self.clear_flag(CARRY),     // clc
-            0xd8 => self.clear_flag(DECIMAL),   // cld
-            0x58 => self.clear_flag(INTERRUPT), // cli
-            0xb8 => self.clear_flag(OVERFLOW),  // clv
+            0x18 => self.p.carry = false,     // clc
+            0xd8 => self.p.decimal = false,   // cld
+            0x58 => self.p.interrupt = false, // cli
+            0xb8 => self.p.overflow = false,  // clv
 
             0xc9 => inst!(self, cmp, immediate),
             0xc5 => inst!(self, cmp, zeropage),
@@ -722,13 +723,13 @@ impl Cpu {
             }
 
             0x08 => { // php
-                let p = self.p;
+                let byte = self.p.as_byte();
                 // PHP always pushes Break flag as 1
-                self.push(p | BREAK);
+                self.push(byte | 0x20);
             }
 
             0x68 => self.a = self.pop(), // pla
-            0x28 => self.p = self.pop(), // plp
+            0x28 => self.p = Status::new(self.pop()), // plp
 
             0x2a => inst!(self, rol, accumulator),
             0x26 => inst!(self, rol, zeropage),
@@ -753,9 +754,9 @@ impl Cpu {
             0xe1 => inst!(self, sbc, indexed_indirect),
             0xf1 => inst!(self, sbc, indirect_indexed),
 
-            0x38 => self.set_flag(CARRY),     // sec
-            0xf8 => self.set_flag(DECIMAL),   // sed
-            0x78 => self.set_flag(INTERRUPT), // sei
+            0x38 => self.p.carry = true,     // sec
+            0xf8 => self.p.decimal = true,   // sed
+            0x78 => self.p.interrupt = true, // sei
 
             0x85 => inst!(self, sta, zeropage),
             0x95 => inst!(self, sta, zeropage_x),
