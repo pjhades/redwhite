@@ -2,7 +2,7 @@ extern crate sdl2;
 
 pub mod cpu;
 pub mod ppu;
-pub mod mem;
+pub mod memory;
 pub mod ines;
 pub mod error;
 pub mod palette;

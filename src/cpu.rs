@@ -1,5 +1,4 @@
-use mem::Access;
-use ppu::Ppu;
+use memory::{Access, CpuMem};
 
 const CYCLES: [usize;256] = [
     //       0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
@@ -42,6 +41,7 @@ const XPAGE_CYCLES: [usize;256] = [
 ];
 
 // status flags
+// XXX this looks disgusting
 const NEGATIVE:  u8 = 0b1000_0000;
 const OVERFLOW:  u8 = 0b0100_0000;
 const UNKNOWN:   u8 = 0b0010_0000;
@@ -58,36 +58,9 @@ pub struct Cpu {
     sp: u8,
     p:  u8,
     pc: u16,
-    ram: [u8; 0x800],
-    ppu: Ppu,
+    mem: CpuMem,
     cycles: usize,
     check_xpage: bool,
-}
-
-impl Access for Cpu {
-    fn read(&self, addr: u16) -> u8 {
-        if addr < 0x2000 {
-            self.ram[(addr & 0x07ff) as usize]
-        }
-        else if addr < 0x4000 {
-            self.ppu.read_reg(addr & 0x2007)
-        }
-        else {
-            panic!("reading other memory sections is not implemented yet!");
-        }
-    }
-
-    fn write(&mut self, addr: u16, value: u8) {
-        if addr < 0x2000 {
-            self.ram[(addr & 0x07ff) as usize] = value;
-        }
-        else if addr < 0x4000 {
-            self.ppu.write_reg(addr & 0x2007, value);
-        }
-        else {
-            panic!("writing other memory sections is not implemented yet!");
-        }
-    }
 }
 
 trait Addressing {
@@ -117,11 +90,11 @@ impl Addressing for Accumulator {
 
 impl Addressing for FromMemory {
     fn address(&self, cpu: &mut Cpu) -> u8 {
-        cpu.read(self.addr)
+        cpu.mem.read(self.addr)
     }
 
     fn writeback(&self, cpu: &mut Cpu, value: u8) {
-        cpu.write(self.addr, value);
+        cpu.mem.write(self.addr, value);
     }
 }
 
@@ -143,8 +116,7 @@ impl Cpu {
             sp: 0xfd,
             pc: 0,
             p:  0x34,
-            ram: [0; 0x800],
-            ppu: Ppu::new(),
+            mem: CpuMem::new(),
             cycles: 0,
             check_xpage: false,
         }
@@ -177,20 +149,20 @@ impl Cpu {
     }
 
     fn read_at_pc(&mut self) -> u8 {
-        let value = self.read(self.pc);
+        let value = self.mem.read(self.pc);
         self.pc += 1;
         value
     }
 
     fn read16_at_pc(&mut self) -> u16 {
-        let value = self.read16(self.pc);
+        let value = self.mem.read16(self.pc);
         self.pc += 2;
         value
     }
 
     fn push(&mut self, value: u8) {
         let addr = self.sp as u16 + 0x0100;
-        self.write(addr, value);
+        self.mem.write(addr, value);
         self.sp -= 1;
     }
 
@@ -201,7 +173,7 @@ impl Cpu {
 
     fn pop(&mut self) -> u8 {
         self.sp += 1;
-        self.read(self.sp as u16 + 0x0100)
+        self.mem.read(self.sp as u16 + 0x0100)
     }
 
     fn pop16(&mut self) -> u16 {
@@ -267,17 +239,17 @@ impl Cpu {
 
     fn indirect(&mut self) -> FromMemory {
         let a = self.read16_at_pc();
-        FromMemory { addr: self.read16_wrapped(a) }
+        FromMemory { addr: self.mem.read16_wrapped(a) }
     }
 
     fn indexed_indirect(&mut self) -> FromMemory {
         let a = self.read_at_pc().wrapping_add(self.x);
-        FromMemory { addr: self.read16_wrapped(a as u16) }
+        FromMemory { addr: self.mem.read16_wrapped(a as u16) }
     }
 
     fn indirect_indexed(&mut self) -> FromMemory {
         let a = self.read_at_pc();
-        let v = self.read16_wrapped(a as u16);
+        let v = self.mem.read16_wrapped(a as u16);
         let addr = v.wrapping_add(self.y as u16);
         self.check_xpage = self.page_crossed(v, addr);
         FromMemory { addr }
@@ -293,6 +265,7 @@ impl Cpu {
         let operand = mode.address(self);
         let mut sum = operand as u16 +
                       self.a as u16 +
+                      // XXX simplify this
                       if self.flag_on(CARRY) { 1 } else { 0 };
         self.update_flag(CARRY, sum > 0xff);
         let result = sum as u8;
