@@ -118,6 +118,30 @@ impl Regs {
     }
 }
 
+struct Sprite {
+    y: u8,
+    index: u8,
+    attr: u8,
+    x: u8,
+}
+
+impl Sprite {
+    #[inline(always)]
+    fn behind_bg(&self) -> bool {
+        self.attr & 0x20 != 0
+    }
+
+    #[inline(always)]
+    fn flip_hori(&self) -> bool {
+        self.attr & 0x40 != 0
+    }
+
+    #[inline(always)]
+    fn flip_vert(&self) -> bool {
+        self.attr & 0x80 != 0
+    }
+}
+
 pub struct Ppu {
     v: u16,        // current VRAM address
     t: u16,        // temporary VRAM address

@@ -105,6 +105,21 @@ macro_rules! inst {
     }}
 }
 
+impl Access for Cpu {
+    fn read(&mut self, addr: u16) -> u8 {
+        self.mem.read(addr)
+    }
+
+    fn write(&mut self, addr: u16, value: u8) {
+        if addr == 0x4014 {
+            self.do_dma(value);
+        }
+        else {
+            self.mem.write(addr, value);
+        }
+    }
+}
+
 impl Cpu {
     pub fn new() -> Self {
         // CPU power-up state
@@ -557,6 +572,20 @@ impl Cpu {
         cpu.pc = cpu.pop_word() as u16;
     }
     */
+
+    // http://wiki.nesdev.com/w/index.php/PPU_OAM#DMA
+    fn do_dma(&mut self, value: u8) {
+        let base = (value as u16) << 8;
+        for addr in base .. base + 0x00ff {
+            let byte = self.mem.read(addr);
+            self.mem.write(0x2004, byte);
+        }
+
+        if self.cycles % 2 != 0 {
+            self.cycles += 1;
+        }
+        self.cycles += 513;
+    }
 
     fn dispatch(&mut self) {
         let opcode = self.read_at_pc();
