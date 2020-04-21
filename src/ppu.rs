@@ -151,6 +151,8 @@ pub struct Ppu {
     mem: PpuMem,
     oam: [u8; 256],
     cycles: usize,
+    nmi_occured: bool,
+    nmi_output: bool,
 }
 
 impl Ppu {
@@ -166,13 +168,16 @@ impl Ppu {
             mem: PpuMem::new(),
             oam: [0; 256],
             cycles: 0,
+            nmi_occured: false,
+            nmi_output: false,
         }
     }
 
     pub fn read_register(&mut self, addr: u16) -> u8 {
         match addr {
             0x2002 => {
-                let value = self.regs.ppustatus;
+                let value = (self.regs.ppustatus & 0x7f) | ((self.nmi_occured as u8) << 7);
+                self.nmi_occured = false;
                 self.w = false;
                 self.regs.ppustatus &= 0x7f;
                 value
@@ -189,7 +194,10 @@ impl Ppu {
 
     pub fn write_register(&mut self, addr: u16, value: u8) {
         match addr {
-            0x2000 => self.regs.ppuctrl = value,
+            0x2000 => {
+                self.regs.ppuctrl = value;
+                self.nmi_output = value & 0x80 != 0;
+            }
             0x2001 => self.regs.ppumask = value,
             0x2003 => self.regs.oamaddr = value,
             0x2004 => {

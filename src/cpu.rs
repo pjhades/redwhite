@@ -41,11 +41,13 @@ const XPAGE_CYCLES: [usize;256] = [
     /* f */  1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,
 ];
 
+fn page_crossed(addr1: u16, addr2: u16) -> bool {
+    addr1 & 0xff00 != addr2 & 0xff00
+}
+
 struct Status {
     pub negative: bool,
     pub overflow: bool,
-    pub unused: bool,
-    pub brk: bool,
     pub decimal: bool,
     pub interrupt: bool,
     pub zero: bool,
@@ -57,8 +59,6 @@ impl Status {
         Status {
             negative:  value & 0x80 != 0,
             overflow:  value & 0x40 != 0,
-            unused:    value & 0x20 != 0,
-            brk:       value & 0x10 != 0,
             decimal:   value & 0x08 != 0,
             interrupt: value & 0x04 != 0,
             zero:      value & 0x02 != 0,
@@ -69,8 +69,6 @@ impl Status {
     fn as_byte(&self) -> u8 {
         (self.negative as u8)  << 7 |
         (self.overflow as u8)  << 6 |
-        (self.unused as u8)    << 5 |
-        (self.brk as u8)       << 4 |
         (self.decimal as u8)   << 3 |
         (self.interrupt as u8) << 2 |
         (self.zero as u8)      << 1 |
@@ -87,7 +85,10 @@ pub struct Cpu {
     pc: u16,
     mem: CpuMem,
     cycles: usize,
-    check_xpage: bool,
+    cross_page: bool,
+    nmi: bool,
+    irq: bool,
+    delayed_set_iflag: Option<bool>,
 }
 
 trait Addressing {
@@ -160,7 +161,10 @@ impl Cpu {
             p:  Status::new(0x34),
             mem: CpuMem::new(),
             cycles: 0,
-            check_xpage: false,
+            cross_page: false,
+            nmi: false,
+            irq: false,
+            delayed_set_iflag: None,
         }
     }
 
@@ -204,18 +208,10 @@ impl Cpu {
         value
     }
 
-    fn page_crossed(&self, addr1: u16, addr2: u16) -> bool {
-        addr1 & 0xff00 != addr2 & 0xff00
-    }
-
     fn jump(&mut self, addr: u16, condition: bool) {
         if condition {
-            // +1 cycle if branch is taken
             self.cycles += 1;
-            // +1 cycle if branching across page boundary
-            if self.page_crossed(self.pc, addr) {
-                self.cycles += 1;
-            }
+            self.cross_page = page_crossed(self.pc, addr);
             self.pc = addr;
         }
     }
@@ -248,14 +244,14 @@ impl Cpu {
     fn absolute_x(&mut self) -> FromMemory {
         let pc = self.pc;
         let addr = self.read16_at_pc().wrapping_add(self.x as u16);
-        self.check_xpage = self.page_crossed(pc, addr);
+        self.cross_page = page_crossed(pc, addr);
         FromMemory { addr }
     }
 
     fn absolute_y(&mut self) -> FromMemory {
         let pc = self.pc;
         let addr = self.read16_at_pc().wrapping_add(self.y as u16);
-        self.check_xpage = self.page_crossed(pc, addr);
+        self.cross_page = page_crossed(pc, addr);
         FromMemory { addr }
     }
 
@@ -273,13 +269,14 @@ impl Cpu {
         let a = self.read_at_pc();
         let v = self.mem.read16_wrapped(a as u16);
         let addr = v.wrapping_add(self.y as u16);
-        self.check_xpage = self.page_crossed(v, addr);
+        self.cross_page = page_crossed(v, addr);
         FromMemory { addr }
     }
 
     fn relative(&mut self) -> FromMemory {
         let offset = self.read_at_pc();
-        FromMemory { addr: ((self.pc as i16) + (offset as i16)) as u16 }
+        let addr = ((self.pc as i16) + (offset as i16)) as u16;
+        FromMemory { addr }
     }
 
     // instructions
@@ -387,18 +384,6 @@ impl Cpu {
         mode.writeback(self, result);
     }
 
-    fn dex(&mut self) {
-        let result = self.x.wrapping_sub(1);
-        self.update_zero_negative(result);
-        self.x = result;
-    }
-
-    fn dey(&mut self) {
-        let result = self.y.wrapping_sub(1);
-        self.update_zero_negative(result);
-        self.y = result;
-    }
-
     fn eor<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let result = self.a ^ operand;
@@ -411,18 +396,6 @@ impl Cpu {
         let result = operand.wrapping_add(1);
         self.update_zero_negative(result);
         mode.writeback(self, result);
-    }
-
-    fn inx(&mut self) {
-        let result = self.x.wrapping_add(1);
-        self.update_zero_negative(result);
-        self.x = result;
-    }
-
-    fn iny(&mut self) {
-        let result = self.y.wrapping_add(1);
-        self.update_zero_negative(result);
-        self.y = result;
     }
 
     #[inline(always)]
@@ -489,10 +462,6 @@ impl Cpu {
         mode.writeback(self, result);
     }
 
-    fn rts(&mut self) {
-        self.pc = self.pop16() + 1;
-    }
-
     fn sbc<T: Addressing>(&mut self, mode: T) {
         let operand = mode.address(self);
         let diff = self.a as u16 -
@@ -525,55 +494,6 @@ impl Cpu {
         mode.writeback(self, y);
     }
 
-    fn tax(&mut self) {
-        let a = self.a;
-        self.update_zero_negative(a);
-        self.x = a;
-    }
-
-    fn tay(&mut self) {
-        let a = self.a;
-        self.update_zero_negative(a);
-        self.y = a;
-    }
-
-    fn tsx(&mut self) {
-        let sp = self.sp;
-        self.update_zero_negative(sp);
-        self.x = sp;
-    }
-
-    fn tsy(&mut self) {
-        let sp = self.sp;
-        self.update_zero_negative(sp);
-        self.y = sp;
-    }
-
-    fn txa(&mut self) {
-        let x = self.x;
-        self.update_zero_negative(x);
-        self.a = x;
-    }
-
-    fn txs(&mut self) {
-        let x = self.x;
-        self.update_zero_negative(x);
-        self.sp = x;
-    }
-
-    fn tya(&mut self) {
-        let y = self.y;
-        self.update_zero_negative(y);
-        self.a = y;
-    }
-
-    /*
-    fn rti(&mut self) {
-        cpu.p = cpu.pop();
-        cpu.pc = cpu.pop_word() as u16;
-    }
-    */
-
     // http://wiki.nesdev.com/w/index.php/PPU_OAM#DMA
     fn do_dma(&mut self, value: u8) {
         let base = (value as u16) << 8;
@@ -588,9 +508,26 @@ impl Cpu {
         self.cycles += 513;
     }
 
+    fn do_interrupt(&mut self, vector: u16, isbrk: bool) {
+        self.push16(self.pc);
+        if isbrk {
+            self.push(self.p.as_byte() | 0x30);
+        }
+        else {
+            self.push(self.p.as_byte() | 0x20);
+        }
+        self.pc = self.mem.read16(vector);
+    }
+
     fn dispatch(&mut self) {
         let opcode = self.read_at_pc();
+
         match opcode {
+            0x00 => { // brk
+                self.do_interrupt(0xfffe, true);
+                self.p.interrupt = true;
+            }
+
             0x69 => inst!(self, adc, immediate),
             0x65 => inst!(self, adc, zeropage),
             0x75 => inst!(self, adc, zeropage_x),
@@ -629,8 +566,8 @@ impl Cpu {
 
             0x18 => self.p.carry = false,     // clc
             0xd8 => self.p.decimal = false,   // cld
-            0x58 => self.p.interrupt = false, // cli
             0xb8 => self.p.overflow = false,  // clv
+            0x58 => self.delayed_set_iflag = Some(false), // cli
 
             0xc9 => inst!(self, cmp, immediate),
             0xc5 => inst!(self, cmp, zeropage),
@@ -654,8 +591,17 @@ impl Cpu {
             0xce => inst!(self, dec, absolute),
             0xde => inst!(self, dec, absolute_x),
 
-            0xca => self.dex(),
-            0x88 => self.dey(),
+            0xca => { // dex
+                let result = self.x.wrapping_sub(1);
+                self.update_zero_negative(result);
+                self.x = result;
+            }
+
+            0x88 => { // dey
+                let result = self.y.wrapping_sub(1);
+                self.update_zero_negative(result);
+                self.y = result;
+            }
 
             0x49 => inst!(self, eor, immediate),
             0x45 => inst!(self, eor, zeropage),
@@ -671,8 +617,17 @@ impl Cpu {
             0xee => inst!(self, inc, absolute),
             0xfe => inst!(self, inc, absolute_x),
 
-            0xe8 => self.inx(),
-            0xc8 => self.iny(),
+            0xe8 => { // inx
+                let result = self.x.wrapping_add(1);
+                self.update_zero_negative(result);
+                self.x = result;
+            }
+
+            0xc8 => { // iny
+                let result = self.y.wrapping_add(1);
+                self.update_zero_negative(result);
+                self.y = result;
+            }
 
             0x4c => inst!(self, jmp, absolute),
             0x6c => inst!(self, jmp, indirect),
@@ -722,14 +677,17 @@ impl Cpu {
                 self.push(a);
             }
 
-            0x08 => { // php
-                let byte = self.p.as_byte();
-                // PHP always pushes Break flag as 1
-                self.push(byte | 0x20);
-            }
+            0x08 => self.push(self.p.as_byte() | 0x30), // php
 
             0x68 => self.a = self.pop(), // pla
-            0x28 => self.p = Status::new(self.pop()), // plp
+
+            0x28 => { // plp
+                let old = self.p.interrupt;
+                self.p = Status::new(self.pop());
+                let new = self.p.interrupt;
+                self.p.interrupt = old;
+                self.delayed_set_iflag = Some(new);
+            }
 
             0x2a => inst!(self, rol, accumulator),
             0x26 => inst!(self, rol, zeropage),
@@ -743,7 +701,12 @@ impl Cpu {
             0x6e => inst!(self, ror, absolute),
             0x7e => inst!(self, ror, absolute_x),
 
-            0x60 => self.rts(),
+            0x60 => self.pc = self.pop16() + 1, // rts
+
+            0x40 => { // rti
+                self.p = Status::new(self.pop());
+                self.pc = self.pop16();
+            }
 
             0xe9 => inst!(self, sbc, immediate),
             0xe5 => inst!(self, sbc, zeropage),
@@ -756,7 +719,7 @@ impl Cpu {
 
             0x38 => self.p.carry = true,     // sec
             0xf8 => self.p.decimal = true,   // sed
-            0x78 => self.p.interrupt = true, // sei
+            0x78 => self.delayed_set_iflag = Some(true), // sei
 
             0x85 => inst!(self, sta, zeropage),
             0x95 => inst!(self, sta, zeropage_x),
@@ -774,19 +737,71 @@ impl Cpu {
             0x94 => inst!(self, sty, zeropage_x),
             0x8c => inst!(self, sty, absolute),
 
-            0xaa => self.tax(),
-            0xa8 => self.tay(),
-            0xba => self.tsx(),
-            0x8a => self.txa(),
-            0x9a => self.txs(),
-            0x98 => self.tya(),
+            0xaa => { // tax
+                let a = self.a;
+                self.update_zero_negative(a);
+                self.x = a;
+            }
+
+            0xa8 => { // tay
+                let a = self.a;
+                self.update_zero_negative(a);
+                self.y = a;
+            }
+
+            0xba => { // tsx
+                let sp = self.sp;
+                self.update_zero_negative(sp);
+                self.x = sp;
+            }
+
+            0x8a => { // txa
+                let x = self.x;
+                self.update_zero_negative(x);
+                self.a = x;
+            }
+
+            0x9a => { // txs
+                let x = self.x;
+                self.update_zero_negative(x);
+                self.sp = x;
+            }
+
+            0x98 => { // tya
+                let y = self.y;
+                self.update_zero_negative(y);
+                self.a = y;
+            }
 
             _ => panic!("unknown opcode {} pc={:x}", opcode, self.pc)
         }
 
         self.cycles += CYCLES[opcode as usize];
-        if self.check_xpage {
+        if self.cross_page {
             self.cycles += XPAGE_CYCLES[opcode as usize];
+        }
+        self.cross_page = false;
+    }
+
+    fn run(&mut self, upto: usize) {
+        let start = self.cycles;
+
+        while self.cycles - start < upto {
+            self.dispatch();
+
+            if self.nmi {
+                self.p.interrupt = true;
+                self.nmi = false;
+            }
+            else if self.irq && !self.p.interrupt {
+                self.do_interrupt(0xfffe, false);
+                self.p.interrupt = true;
+                self.irq = false;
+            }
+
+            if let Some(value) = self.delayed_set_iflag {
+                self.p.interrupt = value;
+            }
         }
     }
 }
