@@ -790,6 +790,7 @@ impl Cpu {
             self.dispatch();
 
             if self.nmi {
+                self.do_interrupt(0xfffa, false);
                 self.p.interrupt = true;
                 self.nmi = false;
             }

@@ -1,4 +1,5 @@
 use memory::{Access, PpuMem};
+//use std::ops::Deref;
 
 struct Regs {
     ppuctrl: u8,   // $2000, write
@@ -118,29 +119,50 @@ impl Regs {
     }
 }
 
-struct Sprite {
-    y: u8,
-    index: u8,
-    attr: u8,
-    x: u8,
-}
+//#[derive(Copy, Clone, Default)]
+//struct Sprite {
+//    y: u8,
+//    index: u8,
+//    attr: u8,
+//    x: u8,
+//}
+//
+//impl Sprite {
+//    #[inline(always)]
+//    fn behind_bg(&self) -> bool {
+//        self.attr & 0x20 != 0
+//    }
+//
+//    #[inline(always)]
+//    fn flip_hori(&self) -> bool {
+//        self.attr & 0x40 != 0
+//    }
+//
+//    #[inline(always)]
+//    fn flip_vert(&self) -> bool {
+//        self.attr & 0x80 != 0
+//    }
+//}
 
-impl Sprite {
-    #[inline(always)]
-    fn behind_bg(&self) -> bool {
-        self.attr & 0x20 != 0
-    }
-
-    #[inline(always)]
-    fn flip_hori(&self) -> bool {
-        self.attr & 0x40 != 0
-    }
-
-    #[inline(always)]
-    fn flip_vert(&self) -> bool {
-        self.attr & 0x80 != 0
-    }
-}
+//struct Oam {
+//    data: [Sprite; 64],
+//}
+//
+//impl Oam {
+//    fn new() -> Self {
+//        Oam {
+//            data: [Sprite::default(); 64]
+//        }
+//    }
+//}
+//
+//impl Deref for Oam {
+//    type Target = [Sprite; 64];
+//
+//    fn deref(&self) -> &Self::Target {
+//        &self.data
+//    }
+//}
 
 pub struct Ppu {
     v: u16,        // current VRAM address
@@ -239,5 +261,10 @@ impl Ppu {
             }
             _ => ()
         }
+    }
+
+    #[inline(always)]
+    pub fn nmi_low(&self) -> bool {
+        self.nmi_occured && self.nmi_output
     }
 }
