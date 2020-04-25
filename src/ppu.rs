@@ -1,123 +1,113 @@
+use std::ops::{Deref, DerefMut};
 use memory::{Access, PpuMem};
-//use std::ops::Deref;
 
-struct Regs {
-    ppuctrl: u8,   // $2000, write
-    ppumask: u8,   // $2001, write
-    ppustatus: u8, // $2002, read
-    oamaddr: u8,   // $2003, write
-    oamdata: u8,   // $2004, read/write
-    ppuscroll: u8, // $2005, write x2
-    ppuaddr: u8,   // $2006, write x2
-    ppudata: u8,   // $2007, read/write
-    oamdma: u8,    // $4014, write
+#[derive(Default)]
+struct PpuCtrl {
+    value: u8
 }
 
-impl Regs {
-    fn new() -> Self {
-        Regs {
-            ppuctrl: 0,
-            ppumask: 0,
-            ppustatus: 0,
-            oamaddr: 0,
-            oamdata: 0,
-            ppuscroll: 0,
-            ppuaddr: 0,
-            ppudata: 0,
-            oamdma: 0,
-        }
+impl Deref for PpuCtrl {
+    type Target = u8;
+
+    fn deref(&self) -> &u8 {
+        &self.value
+    }
+}
+
+impl DerefMut for PpuCtrl {
+    fn deref_mut(&mut self) -> &mut u8 {
+        &mut self.value
+    }
+}
+
+impl PpuCtrl {
+    #[inline(always)]
+    fn base_name_table(&self) -> u16 {
+        0x2000 | ((**self & 0x3) as u16) << 10
     }
 
     #[inline(always)]
-    fn base_nt(&self) -> u16 {
-        0x2000 | ((self.ppuctrl as u16 & 0x3) << 10)
+    fn vram_increment(&self) -> u16 {
+        ((**self & 0x4) * 31 + 1) as u16
     }
 
     #[inline(always)]
-    fn vram_inc(&self) -> u16 {
-        if self.ppuctrl & 0x4 == 0 { 1 } else { 32 }
+    fn spr_pattern_table(&self) -> u16 {
+        (**self & 0x8) as u16
     }
 
     #[inline(always)]
-    fn spr_pt(&self) -> u16 {
-        self.ppuctrl as u16 & 0x8
+    fn bg_pattern_table(&self) -> u16 {
+        ((**self & 0x10) >> 1) as u16
     }
 
     #[inline(always)]
-    fn bg_pt(&self) -> u16 {
-        (self.ppuctrl as u16 & 0x10) >> 1
-    }
-
-    #[inline(always)]
-    fn spr_8x8(&self) -> bool {
-        self.ppuctrl & 0x20 == 0
+    fn spr_8x16(&self) -> bool {
+        **self & 0x20 != 0
     }
 
     #[inline(always)]
     fn slave(&self) -> bool {
-        self.ppuctrl & 0x40 != 0
+        **self & 0x40 != 0
     }
 
     #[inline(always)]
-    fn gen_nmi(&self) -> bool {
-        self.ppuctrl & 0x80 != 0
-    }
-
-    #[inline(always)]
-    fn greyscale(&self) -> bool {
-        self.ppumask & 0x1 != 0
-    }
-
-    #[inline(always)]
-    fn show_bg_left_8px(&self) -> bool {
-        self.ppumask & 0x2 != 0
-    }
-
-    #[inline(always)]
-    fn show_spr_left_8px(&self) -> bool {
-        self.ppumask & 0x4 != 0
-    }
-
-    #[inline(always)]
-    fn show_bg(&self) -> bool {
-        self.ppumask & 0x8 != 0
-    }
-
-    #[inline(always)]
-    fn show_spr(&self) -> bool {
-        self.ppumask & 0x10 != 0
-    }
-
-    #[inline(always)]
-    fn emphasize_r(&self) -> bool {
-        self.ppumask & 0x20 != 0
-    }
-
-    #[inline(always)]
-    fn emphasize_g(&self) -> bool {
-        self.ppumask & 0x40 != 0
-    }
-
-    #[inline(always)]
-    fn emphasize_b(&self) -> bool {
-        self.ppumask & 0x80 != 0
-    }
-
-    #[inline(always)]
-    fn spr_overflow(&self) -> bool {
-        self.ppustatus & 0x20 != 0
-    }
-
-    #[inline(always)]
-    fn spr_0hit(&self) -> bool {
-        self.ppustatus & 0x40 != 0
-    }
-
-    #[inline(always)]
-    fn vblank(&self) -> bool {
-        self.ppustatus & 0x80 != 0
+    fn gen_vblank_nmi(&self) -> bool {
+        **self & 0x80 != 0
     }
 }
+
+#[derive(Default)]
+struct PpuStatus {
+    pub spr_overflow: bool,
+    pub spr_0_hit: bool,
+    pub vblank: bool,
+}
+
+impl PpuStatus {
+    fn as_byte(&self) -> u8 {
+        (self.spr_overflow as u8) << 5 |
+        (self.spr_0_hit as u8)    << 6 |
+        (self.vblank as u8)       << 7
+    }
+}
+
+//struct PpuMask {
+//    pub greyscale: bool,
+//    pub show_bg_left_8px: bool,
+//    pub show_spr_left_8px: bool,
+//    pub show_bg: bool,
+//    pub show_spr: bool,
+//    pub emphasize_r: bool,
+//    pub emphasize_g: bool,
+//    pub emphasize_b: bool,
+//}
+//
+//impl PpuMask {
+//    fn new(value: u8) -> Self {
+//        PpuMask {
+//            greyscale:         value & 0x01 != 0,
+//            show_bg_left_8px:  value & 0x02 != 0,
+//            show_spr_left_8px: value & 0x04 != 0,
+//            show_bg:           value & 0x08 != 0,
+//            show_spr:          value & 0x10 != 0,
+//            emphasize_r:       value & 0x20 != 0,
+//            emphasize_g:       value & 0x40 != 0,
+//            emphasize_b:       value & 0x80 != 0,
+//        }
+//    }
+//
+//    fn as_byte(&self) -> u8 {
+//        (self.greyscale as u8)                    |
+//        (self.greyscshow_bg_left_8px as u8)  << 1 |
+//        (self.greyscshow_spr_left_8px as u8) << 2 |
+//        (self.greyscshow_bg as u8)           << 3 |
+//        (self.greyscshow_spr as u8)          << 4 |
+//        (self.greyscemphasize_r as u8)       << 5 |
+//        (self.greyscemphasize_g as u8)       << 6 |
+//        (self.greyscemphasize_b as u8)       << 7
+//    }
+//}
 
 //#[derive(Copy, Clone, Default)]
 //struct Sprite {
@@ -169,12 +159,22 @@ pub struct Ppu {
     t: u16,        // temporary VRAM address
     x: u8,         // fine X scroll
     w: bool,       // PPUSCROLL, PPUADDR write latch
-    regs: Regs,
     mem: PpuMem,
     oam: [u8; 256],
+    secondary_oam: [u8; 32],
     cycles: usize,
     nmi_occured: bool,
     nmi_output: bool,
+    frame: usize,
+    ppuctrl: PpuCtrl,     // $2000, write
+    ppumask: u8,          // $2001, write
+    ppustatus: PpuStatus, // $2002, read
+    oamaddr: u8,          // $2003, write
+    oamdata: u8,          // $2004, read/write
+    ppuscroll: u8,        // $2005, write x2
+    ppuaddr: u8,          // $2006, write x2
+    ppudata: u8,          // $2007, read/write
+    oamdma: u8,           // $4014, write
 }
 
 impl Ppu {
@@ -186,28 +186,38 @@ impl Ppu {
             t: 0,
             x: 0,
             w: false,
-            regs: Regs::new(),
             mem: PpuMem::new(),
             oam: [0; 256],
+            secondary_oam: [0; 32],
             cycles: 0,
             nmi_occured: false,
             nmi_output: false,
+            frame: 0,
+            ppuctrl: PpuCtrl::default(),
+            ppumask: 0,
+            ppustatus: PpuStatus::default(),
+            oamaddr: 0,
+            oamdata: 0,
+            ppuscroll: 0,
+            ppuaddr: 0,
+            ppudata: 0,
+            oamdma: 0,
         }
     }
 
     pub fn read_register(&mut self, addr: u16) -> u8 {
         match addr {
             0x2002 => {
-                let value = (self.regs.ppustatus & 0x7f) | ((self.nmi_occured as u8) << 7);
+                let value = (self.ppustatus.as_byte() & 0x7f) | ((self.nmi_occured as u8) << 7);
                 self.nmi_occured = false;
                 self.w = false;
-                self.regs.ppustatus &= 0x7f;
+                self.ppustatus.vblank = false;
                 value
             }
-            0x2004 => self.oam[self.regs.oamaddr as usize],
+            0x2004 => self.oam[self.oamaddr as usize],
             0x2007 => {
                 let value = self.mem.read(self.v);
-                self.v += self.regs.vram_inc();
+                self.v += self.ppuctrl.vram_increment();
                 value
             }
             _ => 0,
@@ -217,14 +227,14 @@ impl Ppu {
     pub fn write_register(&mut self, addr: u16, value: u8) {
         match addr {
             0x2000 => {
-                self.regs.ppuctrl = value;
+                *self.ppuctrl = value;
                 self.nmi_output = value & 0x80 != 0;
             }
-            0x2001 => self.regs.ppumask = value,
-            0x2003 => self.regs.oamaddr = value,
+            0x2001 => self.ppumask = value,
+            0x2003 => self.oamaddr = value,
             0x2004 => {
-                self.oam[self.regs.oamaddr as usize] = value;
-                self.regs.oamaddr += 1;
+                self.oam[self.oamaddr as usize] = value;
+                self.oamaddr += 1;
             }
             0x2005 => {
                 if !self.w {
@@ -257,14 +267,22 @@ impl Ppu {
             }
             0x2007 => {
                 self.mem.write(self.v, value);
-                self.v += self.regs.vram_inc();
+                self.v += self.ppuctrl.vram_increment();
             }
             _ => ()
         }
     }
 
     #[inline(always)]
-    pub fn nmi_low(&self) -> bool {
+    pub fn nmi_assert_low(&self) -> bool {
         self.nmi_occured && self.nmi_output
+    }
+
+    fn run(&mut self, upto: usize) {
+        let start = self.cycles;
+
+        while self.cycles - start < upto {
+            // pre-rendering scanline
+        }
     }
 }
