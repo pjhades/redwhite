@@ -23,22 +23,42 @@ impl DerefMut for PpuCtrl {
 impl PpuCtrl {
     #[inline(always)]
     fn base_name_table(&self) -> u16 {
-        0x2000 | ((**self & 0x3) as u16) << 10
+        match **self & 0x3 {
+            0 => 0x2000,
+            1 => 0x2400,
+            2 => 0x2800,
+            _ => 0x2c00,
+        }
     }
 
     #[inline(always)]
     fn vram_increment(&self) -> u16 {
-        ((**self & 0x4) * 31 + 1) as u16
+        if **self & 0x4 == 0 {
+            1
+        }
+        else {
+            32
+        }
     }
 
     #[inline(always)]
     fn spr_pattern_table(&self) -> u16 {
-        (**self & 0x8) as u16
+        if **self & 0x8 == 0 {
+            0x0000
+        }
+        else {
+            0x1000
+        }
     }
 
     #[inline(always)]
     fn bg_pattern_table(&self) -> u16 {
-        ((**self & 0x10) >> 1) as u16
+        if **self & 0x10 == 0 {
+            0x0000
+        }
+        else {
+            0x1000
+        }
     }
 
     #[inline(always)]
@@ -166,6 +186,8 @@ pub struct Ppu {
     nmi_occured: bool,
     nmi_output: bool,
     frame: usize,
+    tick: usize,
+    scanline: usize,
     ppuctrl: PpuCtrl,     // $2000, write
     ppumask: u8,          // $2001, write
     ppustatus: PpuStatus, // $2002, read
@@ -193,6 +215,8 @@ impl Ppu {
             nmi_occured: false,
             nmi_output: false,
             frame: 0,
+            tick: 0,
+            scanline: 261,
             ppuctrl: PpuCtrl::default(),
             ppumask: 0,
             ppustatus: PpuStatus::default(),
@@ -282,7 +306,18 @@ impl Ppu {
         let start = self.cycles;
 
         while self.cycles - start < upto {
-            // pre-rendering scanline
+            match self.scanline {
+                261 => { // pre-render
+                }
+
+                0..=239 => { // visible
+                }
+                240 => { // post-render
+                }
+                241..=260 => { // vblank
+                }
+                _ => panic!("invalid scanline"),
+            }
         }
     }
 }
