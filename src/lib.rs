@@ -6,6 +6,9 @@ pub mod memory;
 pub mod ines;
 pub mod error;
 pub mod palette;
+pub mod addressing;
+pub mod inst;
+pub mod util;
 
 pub const PX_SCALE: usize = 3;
 // Each tile is a 8x8 grid of pixels.
