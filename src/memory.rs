@@ -1,22 +1,21 @@
 use ppu::Ppu;
 
-pub trait Access {
-    // read a single byte
+pub trait Mem {
     fn read(&mut self, addr: u16) -> u8;
 
-    // write a single byte
     fn write(&mut self, addr: u16, value: u8);
 
-    // read 2 bytes starting from `addr`
     fn read16(&mut self, addr: u16) -> u16 {
-        self.read(addr) as u16 | (self.read(addr + 1) as u16) << 8
+        let lo = self.read(addr) as u16;
+        let hi = self.read(addr + 1) as u16;
+        hi << 8 | lo
     }
 
-    // read 2 bytes but with lower address wrapped around
-    // http://nesdev.com/6502_cpu.txt
     fn read16_wrapped(&mut self, addr: u16) -> u16 {
         let wrapped = addr & 0xff00 | (addr + 1) & 0x00ff;
-        self.read(addr) as u16 | (self.read(wrapped) as u16) << 8
+        let lo = self.read(addr) as u16;
+        let hi = self.read(wrapped) as u16;
+        hi << 8 | lo
     }
 }
 
@@ -34,7 +33,7 @@ impl CpuMem {
     }
 }
 
-impl Access for CpuMem {
+impl Mem for CpuMem {
     fn read(&mut self, addr: u16) -> u8 {
         if addr < 0x2000 {
             self.ram[(addr % 0x800) as usize]
@@ -76,7 +75,7 @@ impl PpuMem {
     }
 }
 
-impl Access for PpuMem {
+impl Mem for PpuMem {
     fn read(&mut self, addr: u16) -> u8 {
         if addr < 0x2000 {
             self.pt[addr as usize]
