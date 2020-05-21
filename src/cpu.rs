@@ -54,8 +54,8 @@ pub struct Cpu {
     pc: u16,
     mem: CpuMem,
     cycles: usize,
-    nmi: bool,
-    irq: bool,
+    nmi_pending: bool,
+    irq_pending: bool,
     delayed_set_iflag: Option<bool>,
 }
 
@@ -78,6 +78,11 @@ impl Mem for Cpu {
 }
 
 impl Cpu {
+    const NMI: u16 = 0xfffa;
+    const RST: u16 = 0xfffc;
+    const IRQ: u16 = 0xfffe;
+    const BRK: u16 = 0xfffe;
+
     pub fn new() -> Self {
         Cpu {
             a:  0,
@@ -88,8 +93,8 @@ impl Cpu {
             p:  Status::new(),
             mem: CpuMem::new(),
             cycles: 0,
-            nmi: false,
-            irq: false,
+            nmi_pending: false,
+            irq_pending: false,
             delayed_set_iflag: None,
         }
     }
@@ -163,50 +168,49 @@ impl Cpu {
         }
     }
 
-    // XXX need rework on interrupts
     fn do_interrupt(&mut self, vector: u16, isbrk: bool) {
         self.push16(self.pc);
+
+        let mut byte = self.p.as_byte();
+
         if isbrk {
-            self.push(self.p.as_byte() | 0x30);
+            byte |= 0x30;
         }
         else {
-            self.push(self.p.as_byte() | 0x20);
+            byte |= 0x20;
         }
+        self.push(byte);
+
         self.pc = self.mem.read16(vector);
     }
 
-    fn run_instruction(&mut self) {
+    fn run_next_inst(&mut self) {
         let opcode = self.read_increment_pc();
         INST[opcode as usize](self);
-
-        //self.cycles += CYCLES[opcode as usize];
-        //if self.cross_page {
-        //    self.cycles += XPAGE_CYCLES[opcode as usize];
-        //}
-        //self.cross_page = false;
     }
 
     fn run(&mut self, upto: usize) {
+        // XXX
         let start = self.cycles;
 
         while self.cycles - start < upto {
-            self.run_instruction();
+            if self.nmi_pending {
+                self.do_interrupt(Self::NMI, false);
+                self.p.interrupt = true;
+                self.nmi_pending = false;
+            }
+            else if self.irq_pending && !self.p.interrupt {
+                self.do_interrupt(Self::IRQ, false);
+                self.p.interrupt = true;
+                self.irq_pending = false;
+            }
 
-            // XXX need rework
-            //if self.nmi {
-            //    self.do_interrupt(0xfffa, false);
-            //    self.p.interrupt = true;
-            //    self.nmi = false;
-            //}
-            //else if self.irq && !self.p.interrupt {
-            //    self.do_interrupt(0xfffe, false);
-            //    self.p.interrupt = true;
-            //    self.irq = false;
-            //}
+            if let Some(value) = self.delayed_set_iflag {
+                self.p.interrupt = value;
+            }
+            self.delayed_set_iflag = None;
 
-            //if let Some(value) = self.delayed_set_iflag {
-            //    self.p.interrupt = value;
-            //}
+            self.run_next_inst();
         }
     }
 }
@@ -595,7 +599,7 @@ pub const INST: [fn(cpu: &mut Cpu) -> (); 256] = [
     /* 0x00 */
     |cpu: &mut Cpu| { // brk
         cpu.dummy_read();
-        cpu.do_interrupt(0xfffe, true);
+        cpu.do_interrupt(Self::BRK, true);
         cpu.p.interrupt = true;
     },
     /* 0x01 */ inst!(ora, idx_indir),
