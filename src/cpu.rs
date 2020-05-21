@@ -1,4 +1,4 @@
-use memory::{Mem, CpuMem};
+use crate::memory::{Mem, CpuMem};
 
 struct Status {
     pub negative: bool,
@@ -193,20 +193,20 @@ impl Cpu {
             self.run_instruction();
 
             // XXX need rework
-            if self.nmi {
-                self.do_interrupt(0xfffa, false);
-                self.p.interrupt = true;
-                self.nmi = false;
-            }
-            else if self.irq && !self.p.interrupt {
-                self.do_interrupt(0xfffe, false);
-                self.p.interrupt = true;
-                self.irq = false;
-            }
+            //if self.nmi {
+            //    self.do_interrupt(0xfffa, false);
+            //    self.p.interrupt = true;
+            //    self.nmi = false;
+            //}
+            //else if self.irq && !self.p.interrupt {
+            //    self.do_interrupt(0xfffe, false);
+            //    self.p.interrupt = true;
+            //    self.irq = false;
+            //}
 
-            if let Some(value) = self.delayed_set_iflag {
-                self.p.interrupt = value;
-            }
+            //if let Some(value) = self.delayed_set_iflag {
+            //    self.p.interrupt = value;
+            //}
         }
     }
 }

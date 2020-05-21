@@ -1,5 +1,5 @@
 use std::ops::{Deref, DerefMut};
-use memory::{Mem, PpuMem};
+use crate::memory::{Mem, PpuMem};
 
 #[derive(Default)]
 struct PpuCtrl {

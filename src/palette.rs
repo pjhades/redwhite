@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::path::Path;
 use std::io::Read;
-use error::Error;
 use sdl2::pixels::Color;
+use crate::error::Error;
 
 const NCOLOR: usize = 16;
 const NPALETTE: usize = 4;

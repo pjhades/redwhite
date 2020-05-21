@@ -1,4 +1,4 @@
-use ppu::Ppu;
+use crate::ppu::Ppu;
 
 pub trait Mem {
     fn read(&mut self, addr: u16) -> u8;

@@ -1,9 +1,7 @@
-// https://wiki.nesdev.com/w/index.php/INES
-
 use std::fs::File;
 use std::path::Path;
 use std::io::Read;
-use error::Error;
+use crate::error::Error;
 
 #[derive(Debug)]
 pub struct Header {
